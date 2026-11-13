@@ -41,7 +41,25 @@ export const OPENFREEMAP_SOURCE: MapSourceAdapter = {
 export function validateMapSourceAdapter(adapter: MapSourceAdapter): void {
   validateServiceURL(adapter.tileJSON); validateServiceURL(adapter.glyphs.replace('{fontstack}','font').replace('{range}','0-255'));
   if (!adapter.id || !adapter.version || !Object.values(adapter.layers).every(v => /^[a-zA-Z0-9_-]+$/.test(v)) || !Object.values(adapter.fields).every(v => /^[a-zA-Z0-9_:.-]+$/.test(v))) throw new Error('地图数据映射缺失或无效');
-  if (!adapter.policy.requiredAttribution.length || !adapter.policy.policyURL || !adapter.policy.reviewedAt) throw new Error('地图来源必须声明署名与政策版本');
+  if (!Array.isArray(adapter.policy.requiredAttribution) || !adapter.policy.requiredAttribution.length || !adapter.policy.requiredAttribution.every(v=>typeof v==='string' && v.length>0) || !Array.isArray(adapter.policy.printAttribution) || !adapter.policy.printAttribution.length || !adapter.policy.printAttribution.every(v=>typeof v==='string' && v.length>0) || !adapter.policy.policyURL || !adapter.policy.reviewedAt) throw new Error('地图来源必须声明署名与政策版本');
+  validateServiceURL(adapter.policy.policyURL);
+  for(const key of ['offlineAllowed','bundleAllowed','snapshotBundleAllowed','exportAllowed','publicService'] as const)if(typeof adapter.policy[key]!=='boolean')throw new Error('地图来源能力政策必须显式声明');
+  if(!['http','memory','none'].includes(adapter.policy.cacheMode) || !Number.isFinite(adapter.policy.cacheTTL) || adapter.policy.cacheTTL<0 || !Number.isInteger(adapter.policy.maxConcurrency) || adapter.policy.maxConcurrency<1 || adapter.policy.maxConcurrency>8)throw new Error('地图缓存或并发政策无效');
+}
+
+/** Declarative provider manifests carry complete schema/attribution mapping, never executable code. */
+export function mapSourceFromManifest(manifest: unknown): MapSourceAdapter {
+  if (!manifest || typeof manifest !== 'object') throw new Error('地图扩展声明无效');
+  const value = manifest as Record<string,unknown>;
+  if (value.kind !== 'map-provider' || !value.recipe || typeof value.recipe !== 'object') throw new Error('请选择地图 Provider 类型的声明式扩展');
+  const recipe = value.recipe as Record<string,unknown>;
+  const candidate = {...recipe,id:recipe.id ?? value.id,version:recipe.version ?? value.version} as unknown as MapSourceAdapter;
+  if (!candidate.layers || !candidate.fields || !candidate.policy || typeof candidate.tileJSON !== 'string' || typeof candidate.glyphs !== 'string') throw new Error('地图扩展需提供 tileJSON、glyphs、layers、fields 和 policy 完整映射');
+  const requiredLayers = Object.keys(OPENFREEMAP_SOURCE.layers) as Array<keyof MapSourceAdapter['layers']>;
+  const requiredFields = Object.keys(OPENFREEMAP_SOURCE.fields) as Array<keyof MapSourceAdapter['fields']>;
+  if(requiredLayers.some(key=>typeof candidate.layers[key] !== 'string') || requiredFields.some(key=>typeof candidate.fields[key] !== 'string')) throw new Error('地图 schema 映射缺少必要字段');
+  validateMapSourceAdapter(candidate);
+  return structuredClone(candidate);
 }
 
 export function terrainSource(provider: CameraSpec['terrainProvider']): RasterDEMSourceSpecification {

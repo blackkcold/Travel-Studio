@@ -100,6 +100,7 @@ export class PhotonProvider implements GeoProvider {
   private nextAllowedAt = 0;
   private cache = new Map<string, {at: number; result: PlaceCandidate[]}>();
   private controllers = new Set<AbortController>();
+  private lifecycle = new AbortController();
   private disposed = false;
   constructor(options: {baseURL?: string; fetch?: typeof fetch; timeoutMs?: number; minimumIntervalMs?: number} = {}) {
     this.baseURL = validateServiceURL(options.baseURL ?? 'https://photon.komoot.io/');
@@ -130,6 +131,7 @@ export class PhotonProvider implements GeoProvider {
   private request(url: URL, query: string, signal?: AbortSignal): Promise<PlaceCandidate[]> {
     if (this.disposed) return Promise.reject(abortError(this.id));
     if (signal?.aborted) return Promise.reject(abortError(this.id));
+    signal = signal ? AbortSignal.any([signal, this.lifecycle.signal]) : this.lifecycle.signal;
     const key = url.href;
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.at < this.policy.cacheTTL) return Promise.resolve(structuredClone(cached.result));
@@ -175,5 +177,5 @@ export class PhotonProvider implements GeoProvider {
     this.queue = job;
     return job;
   }
-  dispose(): void { this.disposed = true; for (const c of this.controllers) c.abort(); this.controllers.clear(); this.cache.clear(); }
+  dispose(): void { this.disposed = true; this.lifecycle.abort(); for (const c of this.controllers) c.abort(); this.controllers.clear(); this.cache.clear(); }
 }

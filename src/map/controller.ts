@@ -136,7 +136,9 @@ export function createMapController(container: HTMLElement, initial: MapControll
   // Register a handler immediately so a consumer can attach UI callbacks before awaiting ready.
   void ready.catch(()=>undefined);
   const sourceUpdate = (id:string,data:GeoJSON.FeatureCollection) => {const source = map.getSource(id) as GeoJSONSource | undefined; if(source) source.setData(data);};
-  const updateSources = () => {if(disposed || !map.isStyleLoaded())return;sourceUpdate('journey',routeGeoJSON(state.journey));sourceUpdate('visits',visitGeoJSON(state.journey));sourceUpdate('photos',photoGeoJSON(state.photoPoints ?? []));};
+  // isStyleLoaded() also becomes false while a GeoJSON update is in flight. It must
+  // not drop the next selection revision; setData itself coalesces newer input.
+  const updateSources = () => {if(disposed)return;sourceUpdate('journey',routeGeoJSON(state.journey));sourceUpdate('visits',visitGeoJSON(state.journey));sourceUpdate('photos',photoGeoJSON(state.photoPoints ?? []));};
   const rebuildStyle = () => {if(disposed)return;map.setStyle(compileMapStyle({camera:state.camera,recipe:state.style,source:state.source,journey:state.journey,photoPoints:state.photoPoints,
     showRoute:state.showRoute,showArrows:state.showArrows,showStops:state.showStops}));};
   map.on('load', () => {updateSources();readyResolve();initial.onReady?.();});
@@ -182,8 +184,8 @@ export function createMapController(container: HTMLElement, initial: MapControll
       if(animate)map.easeTo({...cameraOptions(camera),duration:300});else map.jumpTo(cameraOptions(camera));
     },
     getCamera(){return cameraState(map,state.camera);},
-    setJourney(journey){state.journey=journey;updateSources();},
-    setPhotos(photos){state.photoPoints=photos;updateSources();},
+    setJourney(journey){state.journey=journey;if(!disposed){sourceUpdate('journey',routeGeoJSON(journey));sourceUpdate('visits',visitGeoJSON(journey));}},
+    setPhotos(photos){state.photoPoints=photos;if(!disposed)sourceUpdate('photos',photoGeoJSON(photos));},
     setStyle(style){state.style=style;rebuildStyle();},
     setTerrain(enabled,exaggeration=1,provider=state.camera.terrainProvider){state.camera={...cameraState(map,state.camera),terrain:enabled,exaggeration,terrainProvider:provider};rebuildStyle();},
     setVisibility(options){

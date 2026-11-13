@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Travel Studio real map acceptance</title>
+  <style>body{margin:0;padding:20px;background:#f5f4f0;font:14px system-ui;color:#273342}button,input{font:inherit;padding:8px;margin:4px}#map{width:1000px;height:700px;max-width:100%;background:#eee}#output{max-width:1000px;width:100%}pre{white-space:pre-wrap;max-width:1000px}.notice{max-width:1000px}</style></head>
+  <body>
+    <h1>真实地图验收</h1>
+    <p class="notice">此页只用于受控实测；所有候选、地图与地形均来自公共服务。A-B-A 是测试序列，不表示真实到访。</p>
+    <label for="query">地点搜索</label><input id="query" value="日本京都清水寺"><button id="search">提交查询</button>
+    <pre id="search-status" aria-live="polite">等待查询</pre><div id="candidates"></div>
+    <div id="map"></div>
+    <button id="export-2d" disabled>导出真实 2D 4096</button><button id="export-3d" disabled>导出真实 3D 4096</button>
+    <pre id="export-status" aria-live="polite">等待导出</pre><pre id="receipt"></pre>
+    <img id="output" alt="实际编码的地图文件"><a id="download" hidden>下载当前 PNG</a>
+    <script type="module" src="./map.harness.ts"></script>
+  </body>
+</html>
