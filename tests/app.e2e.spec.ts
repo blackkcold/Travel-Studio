@@ -127,6 +127,15 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
   const full = await downloadProject(page, testInfo, 'full-project');
   const lean = await downloadProject(page, testInfo, 'current-artwork-only', true);
   expect(full.project.artworks).toHaveLength(2);
+  // Duplicating a work changes its identity, not its matching high-resolution map pixels.
+  const sourceSnapshot = full.project.artworks[0], copiedSnapshot = full.project.artworks[1];
+  expect(sourceSnapshot.mapSnapshot?.width).toBeGreaterThan(1500);
+  expect(copiedSnapshot.mapSnapshotAssetId).toBe(sourceSnapshot.mapSnapshotAssetId);
+  expect(copiedSnapshot.mapSnapshot).toMatchObject({
+    width: sourceSnapshot.mapSnapshot!.width, height: sourceSnapshot.mapSnapshot!.height,
+    logicalWidth: sourceSnapshot.mapSnapshot!.logicalWidth, logicalHeight: sourceSnapshot.mapSnapshot!.logicalHeight,
+    camera: sourceSnapshot.mapSnapshot!.camera,
+  });
   expect(full.project.library.photos).toHaveLength(4);
   expect(full.project.library.places).toHaveLength(3);
   expect(full.project.library.visits).toHaveLength(5);
@@ -200,18 +209,18 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
       const recovered = await downloadProject(restored, testInfo, `${name}-roundtrip`);
       expect(frozenContent(recovered.project.artworks[0])).toEqual(frozenContent(archive.project.artworks[0]));
       await restored.screenshot({ path: testInfo.outputPath(`${name}-restored.png`), fullPage: true });
-      if (name === 'full') {
-        const savedArt = archive.project.artworks[0];
-        expect(savedArt.mapSnapshotAssetId).toBeTruthy();
-        expect(savedArt.mapSnapshot?.width).toBeGreaterThan(1500);
-        // Explicit fault injection: the app remains loaded, while external map/DEM fetches are unavailable.
-        await restored.route('https://**/*', route => route.abort('internetdisconnected'));
-        const offline = await exportImage(restored, testInfo, 'png', 1920, { savedMap: true, name: 'offline-saved-snapshot-1920' });
-        expect(offline.receipt.mapMode).toBe('saved-snapshot');
-        expect(offline.receipt.resourceBarrier).toEqual(expect.arrayContaining(['snapshot-metadata', 'snapshot-pixels', 'snapshot-attribution']));
-        expect(offline.receipt.map?.attribution).toEqual(savedArt.mapSnapshot?.attribution);
-        await closeExport(restored);
+      const savedArt = archive.project.artworks[0];
+      expect(savedArt.mapSnapshotAssetId).toBeTruthy();
+      expect(savedArt.mapSnapshot?.width).toBeGreaterThan(1500);
+      // Explicit fault injection covers both the full work and the duplicated work in its lean package.
+      await restored.route('https://**/*', route => route.abort('internetdisconnected'));
+      const offline = await exportImage(restored, testInfo, 'png', 1920, { savedMap: true, name: `${name}-offline-saved-snapshot-1920` });
+      expect(offline.receipt.mapMode).toBe('saved-snapshot');
+      expect(offline.receipt.resourceBarrier).toEqual(expect.arrayContaining(['snapshot-metadata', 'snapshot-pixels', 'snapshot-attribution']));
+      expect(offline.receipt.map?.attribution).toEqual(savedArt.mapSnapshot?.attribution);
+      await closeExport(restored);
 
+      if (name === 'full') {
         // Explicit local-storage corruption injection after a real import and save.
         await restored.evaluate(async id => {
           const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('travel-studio-v1'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });

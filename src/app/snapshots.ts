@@ -12,9 +12,20 @@ export function artworkPreviewKey(art: ArtworkDocument): string {
 function png(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('无法保存作品预览。')), 'image/png'));
 }
+/** Reuse verified pixels only when copying changes identity, not the rendered map. */
+export function rebindCopiedMapSnapshot(source: ArtworkDocument, copy: ArtworkDocument): ArtworkDocument {
+  const result = clone(copy), snapshot = source.mapSnapshot;
+  if (!source.mapSnapshotAssetId || !snapshot?.snapshotBundleAllowed) return result;
+  const sourceHash = mapSnapshotInputHash(source);
+  if (snapshot.inputHash !== sourceHash || mapSnapshotInputHash({ ...copy, id: source.id }) !== sourceHash) return result;
+  result.mapSnapshotAssetId = source.mapSnapshotAssetId;
+  result.mapSnapshot = { ...clone(snapshot), inputHash: mapSnapshotInputHash(copy) };
+  return result;
+}
 export function createSnapshotPersistence(doc: DocumentStore, assets: AssetStore) {
   const previewKeys = new Map<string, {key:string;assetId:string}>();
   return {
+    rebindCopiedMapSnapshot,
     async onMapFrame(art: ArtworkDocument, frame: MapFrame) {
       if (!frame.receipt.snapshotBundleAllowed) return;
       const inputHash = mapSnapshotInputHash(art), projectId = doc.document.id;
