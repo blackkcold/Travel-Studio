@@ -30,6 +30,7 @@ Cross-module imports use the listed public boundary. Within one module, private 
 - `transact(label, mutation, expectedRevision?, options?)` clones the current revision, applies a draft mutation, validates it and publishes one immutable revision. Explicit `{ recordHistory: false }` cache writes preserve user undo/redo while still advancing and validating the document revision.
 - Failed mutations, failed validation and stale expected revisions leave both the document and its history unchanged.
 - `undo()` and `redo()` restore content with **monotonically increasing** revisions. A new command after undo discards the abandoned redo branch.
+- A new local selection calls `discardRedo()` to invalidate a document redo branch that carries obsolete selection side data. Clearing that branch does not change the document revision.
 - `replace()` is an explicit project-open lifecycle event, not an asynchronous result callback.
 - `retentionDocuments()` exposes current/undo/redo roots so asset cleanup cannot delete resources still needed by history.
 - IndexedDB is a recoverable copy, not another live source of truth. A failed save must not advance the displayed saved revision.
@@ -53,9 +54,13 @@ A group checkbox expands to atomic photograph references. An explicit no-photo v
 
 Known equal timestamps use the persisted stable index and ID as a tie-break. Deselecting a visit's first photograph does not alter the visit's time evidence. Manual ordering changes only `VisitOrder`, never EXIF. Route gaps at missing/unconfirmed coordinates remain visible; no line silently skips the gap. Dateline crossings split at ±180 and fit using the minimal longitude span.
 
+Explicit merge/split/time commands return a cloned library and a visit-identity replacement map. A merge requires the same Place identity and a chosen retained Visit/time source; a split moves only an explicit photo subset and keeps the existing time evidence by default. Source visit snapshots remain in command history, photos keep their original EXIF, and the document transaction provides undo/redo. The active manual order and selection are remapped alongside the command; frozen artworks are updated only through explicit refresh.
+
 ## Frozen artwork and independent cameras
 
 An artwork carries a `JourneySnapshot` and `FrozenPhotoBinding[]`. These preserve the selected members, complete resolved visit facts, order, route segments and original/derived resource references. Editing the source library or atlas filters does not mutate an old artwork. `refreshArtworkJourney()` constructs a replacement only when explicitly requested; the application commits it through one transaction.
+
+`sourceRevision` records when a snapshot was captured. The optional `sourceLibraryHash` identifies canonical library content, so preview caching and artwork edits do not masquerade as source changes. Legacy packages without this key retain the explicit selection/refresh entry without an unverified stale-source indication.
 
 Four coordinate spaces remain separate:
 

@@ -91,6 +91,20 @@ describe('portable project integrity and privacy', () => {
     const same = await persistImportedPackage({ ...imported, project: restored }, storage);
     expect(same.id).toBe(restored.id);
   });
+  it('opens a valid backup even when the same local identity has an incompatible schema', async () => {
+    const { storage: source, project } = await fixture();
+    const imported = await importProjectPackage(await exportProjectPackage(project, source.assets));
+    const name = `backup-recovery-${crypto.randomUUID()}`, storage = await createBrowserStore(name);
+    const raw = await openDB(name), incompatible = { ...project, schemaVersion: 99, revision: 10 };
+    await raw.put('projects', incompatible); raw.close();
+    const restored = await persistImportedPackage(imported, storage);
+    expect(restored.id).not.toBe(project.id);
+    expect(restored.name).toBe('Trip · 恢复副本');
+    expect(await storage.projects.loadRawProject(project.id)).toEqual(incompatible);
+    expect(await storage.projects.loadProject(restored.id)).toEqual(restored);
+    expect((await storage.projects.listProjects()).find(entry => entry.id === project.id)?.recoveryOnly).toBe(true);
+    storage.close();
+  });
   it('lean packages remove unrelated photos/locations and preserve old frozen originals', async () => {
     const { storage, project, own, other } = await fixture();
     project.library.photos[0].assetId = other.id; // Source changed since artwork creation.

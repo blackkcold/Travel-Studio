@@ -60,7 +60,7 @@ function routeVisible(art: ArtworkDocument): boolean { return art.visibility.rou
 /** Snapshot identity excludes display zoom, artwork position and annotation visibility. */
 export function mapSnapshotInputHash(art: ArtworkDocument): string {
   const map = art.nodes.find(node => node.kind === 'map');
-  const source = JSON.stringify([art.id, art.canonicalCamera, map?.transform.width, map?.transform.height, art.journey, art.styleId, art.styleVersion, art.paletteId, art.mapSource, routeVisible(art), art.visibility.arrows]);
+  const source = JSON.stringify([art.id, art.canonicalCamera, map?.transform.width, map?.transform.height, art.journey, art.styleId, art.styleVersion, art.paletteId, art.embeddedStyle, art.mapSource, routeVisible(art), art.visibility.arrows]);
   let value = 2166136261; for (let i = 0; i < source.length; i++) value = Math.imul(value ^ source.charCodeAt(i), 16777619);
   return (value >>> 0).toString(16);
 }
@@ -116,10 +116,11 @@ export async function prepareResources(art: ArtworkDocument, services: RenderSer
     const nodes = art.nodes.filter(node => node.kind === 'photo' && isNodeVisible(node, art));
     for (let i = 0; i < nodes.length; i++) {
       abort(signal); const node = nodes[i]; onStage?.(`处理照片 ${i + 1} / ${nodes.length}`);
-      const assetId = node.photoEdit?.mode === 'ai' && node.photoEdit.derivedAssetId ? node.photoEdit.derivedAssetId : node.assetId;
+      const originalOfPair = art.templateId === 'torn-art' && node.role === 'photo' && nodes.some(other => other.role === 'photo-art' && other.photoId === node.photoId);
+      const edit = originalOfPair ? { ...node.photoEdit, mode: 'original' as const } : node.photoEdit;
+      const assetId = edit?.mode === 'ai' && edit.derivedAssetId ? edit.derivedAssetId : node.assetId;
       if (!assetId) throw new Error(`照片 ${node.id} 没有资源绑定。`);
       const blob = await services.getAsset(assetId); if (!blob) throw new Error(`缺少照片资源：${assetId.slice(0, 12)}。请恢复完整项目。`);
-      const edit = art.templateId === 'torn-art' && node.role === 'photo' ? { ...node.photoEdit, mode: 'original' as const } : node.photoEdit;
       const canvas = await services.processPhoto(blob, edit, art.styleId, Math.min(8192, Math.ceil(Math.max(node.transform.width, node.transform.height) * scale * Math.max(1, node.crop?.zoom ?? 1) * 1.5)), signal);
       handles.push(canvas); resources.photos.set(node.id, canvas);
     }

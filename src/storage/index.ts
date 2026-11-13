@@ -342,10 +342,15 @@ export async function persistImportedPackage(imported: ImportedProject, storage:
     const saved = await storage.assets.putAsset(asset.blob, asset.manifest);
     if (saved.hash !== asset.manifest.hash) throw new Error('恢复资源完整性校验失败。');
   }
-  const restored = clone(imported.project), existing = await storage.projects.loadProject(restored.id);
+  const restored = clone(imported.project), existing = await storage.projects.loadRawProject(restored.id);
   // Opening a portable file is deliberate recovery, not an asynchronous stale document write.
   // Keep both versions when the device already has different work with the same identity.
-  if (existing && JSON.stringify(existing) !== JSON.stringify(restored)) {
+  let identical = false;
+  if (existing !== undefined) {
+    try { identical = validateProject(existing).valid && JSON.stringify(existing) === JSON.stringify(restored); }
+    catch { /* A damaged local row still owns its identity and must remain recoverable. */ }
+  }
+  if (existing !== undefined && !identical) {
     const now = new Date().toISOString();
     restored.id = newId('project');
     restored.name = `${restored.name} · 恢复副本`;

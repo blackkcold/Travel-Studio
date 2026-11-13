@@ -42,7 +42,7 @@ export function formatTimeEvidence(time: TimeEvidence): string {
   if (time.precision === 'unknown' || !time.value) return '时间待确认';
   if (time.precision === 'date') return `${time.value} · 当日次序未定`;
   const label = time.value.replace('T', ' ');
-  return time.precision === 'local' ? `${label} · 时区未知` : label;
+  return time.precision === 'local' ? `${label} · 时区未知` : `${label}${time.offset && !/(?:Z|[+-]\d{2}:\d{2})$/.test(time.value) ? ` ${time.offset}` : ''}`;
 }
 export function timePrecisionLabel(precision: TimePrecision): string { return { instant: '含时区偏移', local: '本地拍摄记录', date: '仅日期', unknown: '时间待确认' }[precision]; }
 export function weekdayLabel(value: string, locale = 'zh-CN'): string {

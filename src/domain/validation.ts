@@ -150,6 +150,7 @@ export function validateProject(input: unknown): ValidationResult {
     if (a.mapSource !== undefined) check(record(a.mapSource), `${path}.mapSource`, '地图 Provider 快照必须是声明式对象');
     if (!record(a.journey)) { issue(`${path}.journey`, '缺少冻结行程'); return; }
     const journey = a.journey; selectionRecipe(journey.recipe, `${path}.journey.recipe`);
+    if (journey.sourceLibraryHash !== undefined) check(typeof journey.sourceLibraryHash === 'string' && journey.sourceLibraryHash.length > 0 && journey.sourceLibraryHash.length <= 200, `${path}.journey.sourceLibraryHash`, '资料库内容指纹无效');
     const frozen = rows(journey.resolvedVisits, `${path}.journey.resolvedVisits`); const frozenIds = new Set(frozen.map(x => x.id));
     frozen.forEach((v, j) => { if (v.coordinate !== undefined) check(coordinate(v.coordinate), `${path}.journey.resolvedVisits[${j}].coordinate`, '冻结坐标无效'); time(v.time, `${path}.journey.resolvedVisits[${j}].time`); });
     refs(journey.selectedPhotoIds, new Set(bindings.map(b => b.photoId)), `${path}.journey.selectedPhotoIds`); refs(journey.selectedVisitIds, frozenIds, `${path}.journey.selectedVisitIds`); refs(journey.explicitVisitIds, frozenIds, `${path}.journey.explicitVisitIds`);

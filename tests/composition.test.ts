@@ -17,9 +17,27 @@ describe('template and style coverage', () => {
   it('solves all 36 family/style representatives without empty slots or illegal geometry', () => { const representatives = TEMPLATES.filter(t => t.variant === 1); for (const template of representatives) for (const style of STYLES) { const value = art(template.id, 3); value.styleId = style.id; value.paletteId = style.palettes[0].id; const result = solved(value); for (const node of result.nodes.filter(n => n.visible)) expect(Object.values(node.transform).every(Number.isFinite)).toBe(true); } });
   it('applies local neutral photo parameters and distinct declarative map palettes', () => { const result = solved(art()); expect(result.nodes.find(n => n.kind === 'photo')?.photoEdit).toMatchObject({ exposure: 0, contrast: 1, saturation: 1 }); expect(new Set(STYLES.map(s => s.palettes[0].water)).size).toBe(6); });
   it('reserves four attribution lines without overlapping the standard footer', () => { for (const template of TEMPLATES) { const result = solved(art(template.id, 3)), attribution = result.nodes.find(node => node.kind === 'attribution')!; expect(attribution.transform.height).toBe(44); expect(attribution.transform.y + attribution.transform.height).toBeLessThanOrEqual(result.artboard.height); } });
+  it('keeps automatic stamps and compasses clear of map anchors, photographs and title text', () => {
+    for (const template of TEMPLATES) for (const titleVisible of [true, false]) {
+      const value = art(template.id, 3); value.visibility.title = titleVisible; value.visibility.date = titleVisible;
+      const result = solved(value), content = result.nodes.filter(node => node.visible && ['map', 'photo', 'text', 'attribution'].includes(node.kind));
+      for (const ornament of result.nodes.filter(node => node.visible && ['stamp', 'compass'].includes(node.role))) {
+        const t = ornament.transform, box = { x: t.x - 8, y: t.y - 8, width: t.width + 16, height: t.height + 16 };
+        for (const node of content) { const c = node.transform; expect(box.x < c.x + c.width && box.x + box.width > c.x && box.y < c.y + c.height && box.y + box.height > c.y, `${template.id}: ${ornament.role} covers ${node.role}`).toBe(false); }
+      }
+    }
+  });
 });
 
 describe('reversible visibility and independent layout locks', () => {
+  it('preserves an explicitly pinned or freely positioned stamp', () => {
+    for (const mode of ['assisted', 'free'] as const) {
+      const value = solved(art('ticket-photo')), stamp = value.nodes.find(node => node.id === 'stamp')!;
+      stamp.transform = { x: 820, y: 340, width: 45, height: 45, rotation: 17 }; value.layout.mode = mode;
+      if (mode === 'assisted') stamp.constraint.position = 'pinned';
+      expect(solved(value).nodes.find(node => node.id === 'stamp')!.transform).toEqual(stamp.transform);
+    }
+  });
   it('hides and restores photo group without deleting original nodes, crop or edit values', () => { let value = solved(art()); const photo = value.nodes.find(n => n.kind === 'photo')!; photo.crop = { x: .2, y: .7, zoom: 2, rotation: 11 }; photo.photoEdit!.intensity = .2; photo.constraint.crop = 'fixed'; value.visibility.photos = false; value = solved(value); expect(value.nodes.filter(n => n.kind === 'photo')).toHaveLength(3); expect(value.nodes.filter(n => n.kind === 'photo').every(n => !isNodeVisible(n, value))).toBe(true); value.visibility.photos = true; value = solved(value); const restored = value.nodes.find(n => n.id === photo.id)!; expect(restored.visible).toBe(true); expect(restored.crop).toEqual(photo.crop); expect(restored.photoEdit!.intensity).toBe(.2); });
   it('preserves individually hidden photo and text intent through global toggles', () => { let value = solved(art()); const photo = value.nodes.find(n => n.kind === 'photo')!; photo.visible = false; photo.userOverrides = { visible: false }; const title = value.nodes.find(n => n.id === 'title')!; title.visible = false; title.userOverrides = { visible: false }; value = solved(value); expect(value.nodes.find(n => n.id === 'title')!.visible).toBe(false); value.visibility.photos = false; value = solved(value); value.visibility.photos = true; value = solved(value); expect(value.nodes.find(n => n.id === photo.id)!.visible).toBe(false); expect(value.nodes.find(n => n.id === 'photo-p1')!.visible).toBe(true); });
   it('map hiding retains the route, sequence and annotated node identities', () => { let value = solved(art()); const sequence = structuredClone(value.journey.order); value.visibility.map = false; value = solved(value); expect(value.nodes.find(n => n.kind === 'map')!.visible).toBe(false); expect(value.nodes.find(n => n.kind === 'route')).toBeDefined(); expect(value.nodes.filter(n => ['route', 'annotation'].includes(n.kind)).every(n => !isNodeVisible(n, value))).toBe(true); value.visibility.map = true; value = solved(value); expect(value.journey.order).toEqual(sequence); expect(value.nodes.filter(n => n.kind === 'map')).toHaveLength(1); });

@@ -55,9 +55,21 @@ export function solveLayout(art: ArtworkDocument): LayoutProposal {
   const enabled = (id: string, group: boolean) => group && explicitVisibility(existing.get(id), true);
   const pad = Math.max(28, Math.min(W, H) * .055, Math.min(W, H) * art.artboard.safeMarginMm / Math.max(1, Math.min(art.artboard.physicalWidthMm, art.artboard.physicalHeightMm)));
   const gap = Math.max(8, art.layout.gap), availableWidth = W - 2 * pad;
+  // Automatic ornaments have their own header space. Map annotations may occupy any
+  // part of a map frame, so its lower corner is never a safe default decoration slot.
+  const headerOrnaments = new Map<string, Transform>(); let ornamentWidth = 0, ornamentHeight = 0;
+  for (const [id, size, visible] of [['stamp', 45, v.stamp], ['compass', 34, v.compass]] as const) {
+    const old = existing.get(id);
+    if (customSlots || !enabled(id, visible) || old?.constraint.position === 'pinned' || (art.layout.mode === 'free' && old)) continue;
+    const width = old?.constraint.size === 'fixed' ? old.transform.width : size, height = old?.constraint.size === 'fixed' ? old.transform.height : size;
+    if (ornamentWidth) ornamentWidth += 8;
+    headerOrnaments.set(id, tr(W - pad - ornamentWidth - width - 8, pad + 8, width, height));
+    ornamentWidth += width + 16; ornamentHeight = Math.max(ornamentHeight, height + 24);
+  }
+  const headerTextWidth = Math.max(1, availableWidth - ornamentWidth - (ornamentWidth ? 12 : 0));
   const titleSize = Number(existing.get('title')?.userOverrides?.fontSize) || (customTitle?.fontSize ?? Math.min(48, W * .058, customTitle ? customTitle.height * H / 1.28 : Infinity));
   const titleText = String(existing.get('title')?.userOverrides?.text ?? art.metadata.title);
-  const titleLineCount = textLines(titleText, availableWidth, titleSize);
+  const titleLineCount = textLines(titleText, headerTextWidth, titleSize);
   const titleH = enabled('title', v.title) && titleText ? titleSize * 1.28 * titleLineCount + 10 : 0;
   const dateH = enabled('date', v.date) && art.metadata.date ? 27 : 0;
   const messageText = String(existing.get('message')?.userOverrides?.text ?? art.metadata.message);
@@ -66,7 +78,7 @@ export function solveLayout(art: ArtworkDocument): LayoutProposal {
   const orderedVisits = art.journey.order.orderedVisitIds.map(id => art.journey.resolvedVisits.find(v => v.id === id)).filter(Boolean);
   const legendText = orderedVisits.map((visit, i) => `${i + 1}. ${visit!.name}`).join('  ·  ');
   const legendH = enabled('legend', v.legend) && legendText ? textLines(legendText, availableWidth, 12) * 15.36 + 8 : 0;
-  const top = pad + titleH + dateH, bottom = pad + 52 + messageH + coordinatesH + legendH;
+  const top = pad + Math.max(titleH + dateH, ornamentHeight), bottom = pad + 52 + messageH + coordinatesH + legendH;
   const body = tr(pad, top, availableWidth, H - top - bottom);
   const capacity = Math.max(0, Math.min(1000, Math.floor(art.layout.photoCapacity)));
   const photos = art.frozenPhotoBindings.slice(0, capacity);
@@ -141,14 +153,14 @@ export function solveLayout(art: ArtworkDocument): LayoutProposal {
   }
   const footer = H - bottom + 5;
   nodes.push(
-    make('text', 'title', 'title', tr(pad, pad, availableWidth, Math.max(titleH, titleSize * 1.3)), 30, { text: titleText, fontSize: titleSize, fontFamily: style.font, color: style.palette.ink, visible: enabled('title', v.title) }),
-    make('text', 'date', 'date', tr(pad, pad + titleH, availableWidth, 25), 31, { text: art.metadata.date, fontSize: customSlots ? 12 : 13, fontFamily: 'Inter, "Noto Sans SC", sans-serif', color: style.palette.ink, visible: enabled('date', v.date) && !!art.metadata.date }),
+    make('text', 'title', 'title', tr(pad, pad, headerTextWidth, Math.max(titleH, titleSize * 1.3)), 30, { text: titleText, fontSize: titleSize, fontFamily: style.font, color: style.palette.ink, visible: enabled('title', v.title) }),
+    make('text', 'date', 'date', tr(pad, pad + titleH, headerTextWidth, 25), 31, { text: art.metadata.date, fontSize: customSlots ? 12 : 13, fontFamily: 'Inter, "Noto Sans SC", sans-serif', color: style.palette.ink, visible: enabled('date', v.date) && !!art.metadata.date }),
     make('text', 'message', 'message', tr(pad, footer, availableWidth, Math.max(messageH, 30)), 32, { text: messageText, fontSize: 16, fontFamily: style.font, color: style.palette.ink, visible: enabled('message', v.message) && !!messageText }),
     make('text', 'coordinates', 'coordinates', tr(pad, footer + messageH, availableWidth, 18), 33, { fontSize: 11, color: style.palette.ink, visible: enabled('coordinates', v.coordinates) }),
     make('text', 'legend', 'legend', tr(pad, footer + messageH + coordinatesH, availableWidth, Math.max(legendH, 20)), 34, { text: legendText, fontSize: 12, color: style.palette.ink, visible: enabled('legend', v.legend) && !!legendText }),
     make('decoration', 'border', 'border', tr(14, 14, W - 28, H - 28), 40, { visible: enabled('border', v.border), layoutParticipation: 'overlay' }),
-    make('decoration', 'stamp', 'stamp', tr(W - pad - 60, Math.max(pad, H - pad - 90), 45, 45), 41, { visible: enabled('stamp', v.stamp), layoutParticipation: 'overlay' }),
-    make('decoration', 'compass', 'compass', tr(W - pad - 45, H - bottom - 50, 34, 34), 42, { visible: enabled('compass', v.compass), layoutParticipation: 'overlay' }),
+    make('decoration', 'stamp', 'stamp', headerOrnaments.get('stamp') ?? tr(W - pad - 60, Math.max(pad, H - pad - 90), 45, 45), 41, { visible: enabled('stamp', v.stamp), layoutParticipation: 'overlay' }),
+    make('decoration', 'compass', 'compass', headerOrnaments.get('compass') ?? tr(W - pad - 45, H - bottom - 50, 34, 34), 42, { visible: enabled('compass', v.compass), layoutParticipation: 'overlay' }),
     make('decoration', 'string', 'string', tr(W * .5 - 14, 0, 28, 50), 43, { visible: enabled('string', v.string), layoutParticipation: 'overlay' }),
     make('attribution', 'attribution', 'attribution', tr(pad, H - pad - 17, availableWidth, 44), 50, { fontSize: 9, color: style.palette.ink, locked: true, layoutParticipation: 'reserved' }),
   );
@@ -210,6 +222,11 @@ export function solveLayout(art: ArtworkDocument): LayoutProposal {
   }
   // Re-sync after the placement pass as well.
   for (const child of merged.filter(n => n.parentId === resolvedMap.id && ['route', 'annotation'].includes(n.kind))) child.transform = { ...resolvedMap.transform };
+  for (const ornament of merged.filter(n => headerOrnaments.has(n.id) && n.visible)) {
+    // Account for the stamp's painted tilt and the compass letter outside its box.
+    const t = ornament.transform, bounds = tr(t.x - 8, t.y - 8, t.width + 16, t.height + 16);
+    if (content.some(node => intersects(bounds, rotatedBounds(node.transform)))) conflicts.push({ nodeId: ornament.id, code: 'DECORATION_COLLISION', message: '自动装饰的顶部留白与固定内容重叠，请调整固定内容或隐藏装饰。' });
+  }
   for (const n of content) {
     const t = rotatedBounds(n.transform);
     if (![t.x, t.y, t.width, t.height, n.transform.rotation].every(Number.isFinite) || t.width < 1 || t.height < 1 || t.x < -1 || t.y < -1 || t.x + t.width > W + 1 || t.y + t.height > H + 1) conflicts.push({ nodeId: n.id, code: 'OUTSIDE_ARTBOARD', message: `「${n.role}」超出画板，请释放位置/尺寸锁定或调整版式。` });

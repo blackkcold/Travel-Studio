@@ -40,9 +40,29 @@ jobs:
           JS
       - name: Package the tested build
         run: node scripts/package-release.mjs
-      - name: Smoke-test the production package
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: acceptance-evidence-*
+          path: release/verification-evidence/
+      - uses: actions/download-artifact@v4
+        with:
+          name: live-service-evidence
+          path: release/verification-evidence/live-services/
+      - name: Record the verified source and run
         run: |
-          node server/serve.mjs > /tmp/travel-studio-server.log 2>&1 &
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+          const record={version:pkg.version,commit:process.env.GITHUB_SHA,run:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,generatedAt:new Date().toISOString()};
+          const text=JSON.stringify(record,null,2)+'\n';
+          fs.writeFileSync(`release/Travel-Studio-${pkg.version}/BUILD.json`,text);
+          fs.writeFileSync('release/verification-evidence/BUILD.json',text);
+          JS
+      - name: Smoke-test the production package
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          (cd "release/Travel-Studio-${VERSION}" && exec sh start.sh) > /tmp/travel-studio-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           for attempt in 1 2 3 4 5; do
@@ -62,7 +82,8 @@ jobs:
           cd release
           zip -q -r "Travel-Studio-${VERSION}.zip" "Travel-Studio-${VERSION}"
           tar -czf "Travel-Studio-${VERSION}.tar.gz" "Travel-Studio-${VERSION}"
-          sha256sum "Travel-Studio-${VERSION}.zip" "Travel-Studio-${VERSION}.tar.gz" > SHA256SUMS.txt
+          zip -q -r "Travel-Studio-${VERSION}-verification-evidence.zip" verification-evidence
+          sha256sum "Travel-Studio-${VERSION}.zip" "Travel-Studio-${VERSION}.tar.gz" "Travel-Studio-${VERSION}-verification-evidence.zip" > SHA256SUMS.txt
       - name: Publish normal release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,4 +93,4 @@ jobs:
         run: |
           current_head=$(gh api "repos/${GH_REPO}/branches/main" --jq .commit.sha)
           test "$current_head" = "$GITHUB_SHA"
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "Travel Studio ${VERSION}" --notes-file docs/RELEASE_NOTES.md "release/Travel-Studio-${VERSION}.zip" "release/Travel-Studio-${VERSION}.tar.gz" release/SHA256SUMS.txt
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Travel Studio ${VERSION}" --notes-file docs/RELEASE_NOTES.md "release/Travel-Studio-${VERSION}.zip" "release/Travel-Studio-${VERSION}.tar.gz" "release/Travel-Studio-${VERSION}-verification-evidence.zip" release/SHA256SUMS.txt

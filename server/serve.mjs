@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { readFile, realpath, stat } from 'node:fs/promises';
-import { resolve, relative, extname, sep } from 'node:path';
+import { resolve, relative, basename, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -160,7 +160,10 @@ export function createTravelServer(options = {}) {
       let actual, bytes;
       try { actual = await realpath(path); const base = await realpath(directory); if (actual !== base && !actual.startsWith(base + sep)) throw new HttpError(403, 'PATH_REJECTED', '符号链接超出应用目录。'); bytes = await readFile(actual); }
       catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(503, 'BUILD_REQUIRED', '应用尚未构建。请先运行 npm run build。'); }
-      res.writeHead(200, { 'Content-Type': MIME[extname(actual).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': bytes.length, 'Cache-Control': extname(actual) === '.html' ? 'no-cache' : /[-.][A-Za-z0-9_-]{8,}\./.test(actual) ? 'public, max-age=31536000, immutable' : 'no-cache' });
+      // A versioned parent folder (Travel-Studio-1.0.0) is not a content hash.
+      // Only hashed asset filenames may survive a later local package upgrade.
+      const extension = extname(actual).toLowerCase();
+      res.writeHead(200, { 'Content-Type': MIME[extension] ?? 'application/octet-stream', 'Content-Length': bytes.length, 'Cache-Control': extension === '.html' ? 'no-cache' : /[-.][A-Za-z0-9_-]{8,}\./.test(basename(actual)) ? 'public, max-age=31536000, immutable' : 'no-cache' });
       res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
       if (!res.headersSent && !res.destroyed) json(res, error instanceof HttpError ? error.status : 500, { error: { code: error instanceof HttpError ? error.code : 'INTERNAL_ERROR', message: error instanceof HttpError ? error.message : '本地服务未能完成请求。配置和照片内容未写入日志。' } });

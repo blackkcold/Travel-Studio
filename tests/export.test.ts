@@ -38,7 +38,29 @@ describe('physical output dimensions', () => {
 });
 
 describe('frozen map snapshots and resource barriers', () => {
-  it('includes camera, source, style and route visibility in a snapshot fingerprint', () => { const art = makeArt(), hash = mapSnapshotInputHash(art); art.canonicalCamera.zoom++; expect(mapSnapshotInputHash(art)).not.toBe(hash); art.canonicalCamera.zoom--; art.mapSource = { id: 'other' }; expect(mapSnapshotInputHash(art)).not.toBe(hash); delete art.mapSource; art.nodes.find(n => n.kind === 'route')!.visible = false; expect(mapSnapshotInputHash(art)).not.toBe(hash); });
+  it('keeps local processing on an unpaired torn-art photo', async () => {
+    const art = makeArt(); art.templateId = 'torn-art';
+    const base = art.nodes.find(node => node.kind === 'map')!;
+    art.nodes = [{ ...base, id: 'photo-one', kind: 'photo', role: 'photo', parentId: undefined, assetId: 'original', photoId: 'p1', photoEdit: { mode: 'local', intensity: .7, exposure: 0, contrast: 1, saturation: 1, crop: { x: .5, y: .5, zoom: 1, rotation: 0 } } }];
+    vi.stubGlobal('document', fontDocument());
+    const processPhoto = vi.fn(async (..._args: Parameters<RenderServices['processPhoto']>) => ({ width: 100, height: 100 } as HTMLCanvasElement));
+    const resources = await prepareResources(art, { getAsset: vi.fn(async () => new Blob(['original'])), renderMap: vi.fn(), processPhoto });
+    expect(processPhoto.mock.calls[0][1]).toMatchObject({ mode: 'local', intensity: .7 }); resources.dispose();
+  });
+  it('binds a torn-art comparison original to the original bytes, beside its AI version', async () => {
+    const art = makeArt(); art.templateId = 'torn-art';
+    const base = art.nodes.find(node => node.kind === 'map')!;
+    const photo = { ...base, id: 'photo-one', kind: 'photo' as const, role: 'photo', parentId: undefined, assetId: 'original', photoId: 'p1', photoEdit: { mode: 'ai' as const, derivedAssetId: 'derived', intensity: 1, exposure: 0, contrast: 1, saturation: 1, crop: { x: .5, y: .5, zoom: 1, rotation: 0 } } };
+    art.nodes = [photo, { ...photo, id: 'photo-art-one', role: 'photo-art' }];
+    vi.stubGlobal('document', fontDocument());
+    const getAsset = vi.fn(async (_id: string) => new Blob(['fixture']));
+    const processPhoto = vi.fn(async (..._args: Parameters<RenderServices['processPhoto']>) => ({ width: 100, height: 100 } as HTMLCanvasElement));
+    const resources = await prepareResources(art, { getAsset, renderMap: vi.fn(), processPhoto });
+    expect(getAsset.mock.calls.map(call => call[0])).toEqual(['original', 'derived']);
+    expect(processPhoto.mock.calls[0][1]).toMatchObject({ mode: 'original' });
+    expect(processPhoto.mock.calls[1][1]).toMatchObject({ mode: 'ai' }); resources.dispose();
+  });
+  it('includes camera, source, style and route visibility in a snapshot fingerprint', () => { const art = makeArt(), hash = mapSnapshotInputHash(art); art.canonicalCamera.zoom++; expect(mapSnapshotInputHash(art)).not.toBe(hash); art.canonicalCamera.zoom--; art.mapSource = { id: 'other' }; expect(mapSnapshotInputHash(art)).not.toBe(hash); delete art.mapSource; art.nodes.find(n => n.kind === 'route')!.visible = false; expect(mapSnapshotInputHash(art)).not.toBe(hash); art.nodes.find(n => n.kind === 'route')!.visible = true; art.embeddedStyle={version:'1.0.0',recipe:{land:'#000000'}}; expect(mapSnapshotInputHash(art)).not.toBe(hash); });
   it('does not store snapshots whose actual provider policy forbids bundling', () => { const art = makeArt(), rendered = frame(art); rendered.receipt.snapshotBundleAllowed = false; expect(() => snapshotMapFrame(art, rendered)).toThrow('不允许'); });
   it('restores frozen annotations and terrain attribution, without requesting any map network', async () => {
     const art = makeArt(), rendered = frame(art); art.mapSnapshot = snapshotMapFrame(art, rendered); art.mapSnapshotAssetId = 'snapshot'; const close = vi.fn();

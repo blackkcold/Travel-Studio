@@ -13,15 +13,17 @@ function png(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('无法保存作品预览。')), 'image/png'));
 }
 export function createSnapshotPersistence(doc: DocumentStore, assets: AssetStore) {
-  const previewKeys = new Map<string, string>();
+  const previewKeys = new Map<string, {key:string;assetId:string}>();
   return {
     async onMapFrame(art: ArtworkDocument, frame: MapFrame) {
       if (!frame.receipt.snapshotBundleAllowed) return;
       const inputHash = mapSnapshotInputHash(art), projectId = doc.document.id;
+      const cachedId=doc.document.artworks.find(item=>item.id===art.id)?.mapSnapshotAssetId;
+      const cachedExists=!!cachedId&&!!(await assets.getManifest(cachedId));
       const eligible = () => {
         const current = doc.document.artworks.find(item => item.id === art.id);
         if (doc.document.id !== projectId || !current || mapSnapshotInputHash(current) !== inputHash) return undefined;
-        if (current.mapSnapshot?.inputHash === inputHash && current.mapSnapshot.width >= frame.canvas.width && current.mapSnapshot.height >= frame.canvas.height) return undefined;
+        if (cachedExists && current.mapSnapshotAssetId===cachedId && current.mapSnapshot?.inputHash === inputHash && current.mapSnapshot.width >= frame.canvas.width && current.mapSnapshot.height >= frame.canvas.height) return undefined;
         return current;
       };
       if (!eligible()) return;
@@ -39,7 +41,9 @@ export function createSnapshotPersistence(doc: DocumentStore, assets: AssetStore
     async savePreview(art: ArtworkDocument, resources: CompositionResources) {
       const key = artworkPreviewKey(art), projectId = doc.document.id;
       const eligible = () => doc.document.id === projectId && doc.document.artworks.some(item => item.id === art.id && artworkPreviewKey(item) === key);
-      if (previewKeys.get(art.id) === key || !eligible()) return;
+      const cached=previewKeys.get(art.id),current=doc.document.artworks.find(item=>item.id===art.id);
+      if(!eligible())return;
+      if(cached?.key===key&&current?.previewAssetId===cached.assetId&&doc.document.assets.some(asset=>asset.id===cached.assetId)&&await assets.getManifest(cached.assetId))return;
       const canvas = document.createElement('canvas'), scale = Math.min(1, 1000 / Math.max(art.artboard.width + 72, art.artboard.height + 72));
       canvas.width = Math.round((art.artboard.width + 72) * scale);
       canvas.height = Math.round((art.artboard.height + 72) * scale);
@@ -55,7 +59,7 @@ export function createSnapshotPersistence(doc: DocumentStore, assets: AssetStore
           if (!project.assets.some(item => item.id === asset.id)) project.assets.push(asset);
           project.artworks.find(item => item.id === art.id)!.previewAssetId = asset.id;
         }, undefined, { recordHistory: false });
-        previewKeys.set(art.id, key);
+        previewKeys.set(art.id, {key,assetId:asset.id});
       } finally { canvas.width = 0; canvas.height = 0; }
     },
   };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createArtwork, createEmptyProject, type FrozenVisit, type ProjectDocument, type SelectionRecipe, type VisitRecord } from '../src/domain';
 import { boundsCenter, distanceKm, geodesicPoints, minimalBounds, parseCoordinate, splitDateline, withinBounds } from '../src/geo';
-import { buildRoute, evaluateSelection, freezeJourney, moveVisit, orderVisits, parseTimeEvidence, refreshArtworkJourney, sortableTime, toggleSelection, toggleVisitSelection, visitSelectionState, weekdayLabel } from '../src/journey';
+import { buildRoute, evaluateSelection, formatTimeEvidence, freezeJourney, libraryFingerprint, moveVisit, orderVisits, parseTimeEvidence, refreshArtworkJourney, sortableTime, toggleSelection, toggleVisitSelection, visitSelectionState, weekdayLabel } from '../src/journey';
 
 function fixture(): { project: ProjectDocument; recipe: SelectionRecipe } {
   const project = createEmptyProject(); const now = '2026-07-21T00:00:00Z';
@@ -43,10 +43,25 @@ describe('anchored atomic selection', () => {
 });
 
 describe('truthful ordering and frozen routes', () => {
+  it('shows a separately recorded time-zone offset exactly once', () => {
+    expect(formatTimeEvidence({ ...parseTimeEvidence('2026:07:21 09:00:00', '+09:00'), value: '2026-07-21T09:00:00' })).toBe('2026-07-21 09:00:00 +09:00');
+    expect(formatTimeEvidence(parseTimeEvidence('2026-07-21T09:00:00+09:00'))).toBe('2026-07-21 09:00:00+09:00');
+    expect(formatTimeEvidence(parseTimeEvidence('2026-07-21T09:00:00'))).toContain('时区未知');
+  });
   it('preserves A-B-A visits and the same numbered order across snapshots', () => {
     const { project } = fixture(); const recipe = allRecipe(project); recipe.manualExclude = [{ kind: 'photo', id: 'p3' }];
     const snapshot = freezeJourney(project, recipe); expect(snapshot.selectedVisitIds).toEqual(['v0', 'v1', 'v2']); expect(snapshot.resolvedVisits.map(v => v.placeId)).toEqual(['A', 'B', 'A']); expect(snapshot.route.segments).toHaveLength(2); expect(snapshot.route.label).toBe('行程示意');
     const moved = moveVisit(snapshot.order, 'v2', 0); expect(moved.orderedVisitIds).toEqual(['v2', 'v0', 'v1']); expect(moved.mode).toBe('manual'); expect(project.library.visits[2].time.value).toContain('18:00');
+  });
+  it('detects source facts independently of document/cache revisions and object-key order', () => {
+    const { project } = fixture(), recipe = allRecipe(project), journey = freezeJourney(project, recipe);
+    expect(journey.sourceLibraryHash).toBe(libraryFingerprint(project.library));
+    project.revision += 20; project.artworks.push(createArtwork());
+    project.library.visits[0] = Object.fromEntries(Object.entries(project.library.visits[0]).reverse()) as unknown as VisitRecord;
+    expect(libraryFingerprint(project.library)).toBe(journey.sourceLibraryHash);
+    project.library.visits[0].time = parseTimeEvidence('2026-07-22T10:00:00');
+    expect(libraryFingerprint(project.library)).not.toBe(journey.sourceLibraryHash);
+    expect(freezeJourney(project, recipe).sourceLibraryHash).toBe(libraryFingerprint(project.library));
   });
   it('uses explicit time basis and leaves incomplete evidence unresolved', () => {
     const times = [parseTimeEvidence('2026-07-21T09:00:00+09:00'), parseTimeEvidence('2026-07-21T08:00:00Z'), parseTimeEvidence('2026-07-21T07:00:00'), parseTimeEvidence('2026-07-21'), parseTimeEvidence()];

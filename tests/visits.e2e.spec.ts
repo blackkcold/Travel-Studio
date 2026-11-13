@@ -7,12 +7,16 @@ test('explicit visit merge, split and time correction preserve source evidence a
   await importFromWelcome(page); await expectCounts(page, 3, 2, 3);
   const rows = page.locator('.reorder-list > li');
   await expect(rows.locator('.visit-copy > .text-button')).toHaveText(['34.9943, 135.7844', '35.0030, 135.7730', '34.9943, 135.7844']);
+  // Saving an existing location without editing its date/time retains EXIF precision and offset.
+  await rows.first().getByRole('button', { name: '编辑到访 · 1 张', exact: true }).click();
+  await page.getByRole('dialog', { name: '编辑到访与时间', exact: true }).getByRole('button', { name: '确认地点与到访', exact: true }).click();
   await page.getByRole('button', { name: '上移第 2 站', exact: true }).click();
   await expect(rows.first()).toContainText('35.0030, 135.7730');
 
   await page.getByRole('button', { name: '管理到访记录', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: '管理到访记录', exact: true });
   const anchor = dialog.getByLabel('保留的到访身份与顺序位置', { exact: true });
+  await expect(anchor).toBeVisible();
   const targetId = await anchor.locator('option').filter({ hasText: /09:00/ }).getAttribute('value');
   await anchor.selectOption(targetId!);
   await expect(dialog.getByRole('button', { name: '应用合并', exact: true })).toBeDisabled();
@@ -57,6 +61,7 @@ test('explicit visit merge, split and time correction preserve source evidence a
   const corrected = saved.project.library.visits.find(visit => visit.id === originalPhoto.visitId)!;
   expect(corrected.time).toMatchObject({ value: '2026-07-23T15:20:00', precision: 'local', source: 'user' });
   expect(corrected.history?.map(entry => entry.kind)).toEqual(['merge', 'split', 'time']);
-  expect(corrected.history?.[0].sourceVisits.map(visit => visit.time.value)).toEqual(expect.arrayContaining(['2026-07-21T09:00:00.125', '2026-07-21T18:00:00']));
+  expect(corrected.history?.[0].sourceVisits.map(visit => visit.time.value)).toEqual(expect.arrayContaining(['2026-07-21T09:00:00.125', '2026-07-21T18:00:00.125']));
+  expect(corrected.history?.[0].sourceVisits.every(visit => visit.time.source === 'exif' && visit.time.offset === '+09:00')).toBe(true);
   expect(network.writes).toEqual([]); expect(network.errors).toEqual([]);
 });

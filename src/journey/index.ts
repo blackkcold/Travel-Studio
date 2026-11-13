@@ -2,7 +2,9 @@ import { clone } from '../domain';
 import type { ArtworkDocument, FrozenVisit, JourneySnapshot, PhotoRecord, ProjectDocument, RouteSpec, SelectionPredicate, SelectionRecipe, SelectionRef, SelectionResult, TravelLibrary, VisitOrder, VisitRecord } from '../domain';
 import { distanceKm, geodesicPoints, isCoordinate, splitDateline, withinBounds } from '../geo';
 import { dateOrdinal, recordedDate, sortableTime } from './time';
+import { libraryFingerprint } from './fingerprint';
 export * from './time';
+export * from './fingerprint';
 
 export const selectionKey = (ref: SelectionRef): string => `${ref.kind}:${ref.id}`;
 /** Include/exclude are mutually exclusive; exclusions take precedence on imported recipes. */
@@ -90,7 +92,7 @@ export function freezeJourney(project: ProjectDocument, recipe: SelectionRecipe,
   const selection = evaluateSelection(project.library, recipe); const order = orderVisits(project.library.visits, selection.selectedVisitIds, intent.mode ?? 'time', intent.timeBasis ?? 'recorded-local', intent.orderedVisitIds ?? []);
   const selectedPhotos = new Set(selection.selectedPhotoIds), selectedVisits = new Set(selection.selectedVisitIds); const places = new Map(project.library.places.map(p => [p.id, p]));
   const resolvedVisits: FrozenVisit[] = project.library.visits.filter(v => selectedVisits.has(v.id)).map(visit => { const place = visit.placeId ? places.get(visit.placeId) : undefined; return { id: visit.id, ...(visit.placeId ? { placeId: visit.placeId } : {}), name: visit.label || place?.name || '待定位到访', ...(place?.coordinate ? { coordinate: clone(place.coordinate) } : {}), precision: place?.precision ?? 'unknown', status: place?.status ?? 'missing', photoIds: visit.photoIds.filter(id => selectedPhotos.has(id)), time: clone(visit.time), stableIndex: visit.stableIndex }; });
-  return { sourceRevision: project.revision, selectionRevision, recipe: clone(recipe), selectedPhotoIds: selection.selectedPhotoIds, explicitVisitIds: selection.explicitVisitIds, selectedVisitIds: selection.selectedVisitIds, order, resolvedVisits, route: buildRoute(resolvedVisits, order) };
+  return { sourceRevision: project.revision, sourceLibraryHash: libraryFingerprint(project.library), selectionRevision, recipe: clone(recipe), selectedPhotoIds: selection.selectedPhotoIds, explicitVisitIds: selection.explicitVisitIds, selectedVisitIds: selection.selectedVisitIds, order, resolvedVisits, route: buildRoute(resolvedVisits, order) };
 }
 /** Explicit refresh returns a draft; only DocumentStore may commit it. Existing snapshots remain untouched. */
 export function refreshArtworkJourney(project: ProjectDocument, artwork: ArtworkDocument, recipe = artwork.journey.recipe, intent: Partial<VisitOrder> = artwork.journey.order): ArtworkDocument {

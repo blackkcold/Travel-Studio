@@ -87,6 +87,7 @@ export interface RouteSegment { id: string; fromVisitId: string; toVisitId: stri
 export interface RouteSpec { kind: 'itinerary' | 'geodesic' | 'recorded' | 'routed'; segments: RouteSegment[]; gaps: Array<{ visitId: string; reason: 'missing-coordinate' | 'unconfirmed-location' | 'unresolved-time' }>; orderedVisitIds: string[]; label: string }
 export interface JourneySnapshot {
   sourceRevision: number;
+  sourceLibraryHash?: string;
   selectionRevision: number;
   recipe: SelectionRecipe;
   selectedPhotoIds: string[];

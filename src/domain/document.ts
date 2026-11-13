@@ -57,6 +57,8 @@ export class DocumentStore {
   private restore(entry: HistoryEntry): ProjectDocument { const restored = clone(entry.document); restored.revision = this.current.revision + 1; restored.updatedAt = new Date().toISOString(); this.current = deepFreeze(restored); this.emit(); return this.current; }
   undo(): ProjectDocument { const entry = this.past.pop(); if (!entry) return this.current; this.future.push({ label: entry.label, document: this.current }); return this.restore(entry); }
   redo(): ProjectDocument { const entry = this.future.pop(); if (!entry) return this.current; this.past.push({ label: entry.label, document: this.current }); return this.restore(entry); }
+  /** A new UI selection command invalidates the abandoned document redo branch too. */
+  discardRedo(): void { if (this.future.length) { this.future = []; this.emit(); } }
   /** Opening a project is an explicit lifecycle operation, not an asynchronous write. */
   replace(document: ProjectDocument): void { assertValidProject(document); this.current = deepFreeze(clone(document)); this.past = []; this.future = []; this.emit(); }
   retentionDocuments(): ProjectDocument[] { return [this.current, ...this.past.map(x => x.document), ...this.future.map(x => x.document)]; }

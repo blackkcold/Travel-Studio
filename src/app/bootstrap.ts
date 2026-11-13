@@ -7,7 +7,7 @@ import { createMapController, renderMapFrame } from '../map';
 import { TaskScheduler, ResourceLeases } from '../runtime';
 import { ExtensionRegistry } from '../plugins';
 import { create } from 'zustand';
-import { installDesignManifest } from '../design-packages';
+import { installDesignManifest, resolveStyle, resolveTemplate } from '../design-packages';
 import type { ProjectDocument } from '../domain';
 import { createSnapshotPersistence } from './snapshots';
 
@@ -19,7 +19,7 @@ export interface UIState {
 export async function bootstrap() {
   const storage = await createBrowserStore();
   const extensions=new ExtensionRegistry();
-  function restoreDesigns(doc:ProjectDocument){for(const art of doc.artworks)for(const manifest of [art.embeddedStyle,art.embeddedTemplate]){if(!manifest)continue;installDesignManifest(manifest);const entry=extensions.register(manifest);extensions.activate(entry.manifest.id,entry.manifest.version);extensions.retain(entry.manifest.id,entry.manifest.version,art.id);}}
+  function restoreDesigns(doc:ProjectDocument){for(const art of doc.artworks){for(const manifest of [art.embeddedStyle,art.embeddedTemplate]){if(!manifest)continue;installDesignManifest(manifest);const entry=extensions.register(manifest);extensions.activate(entry.manifest.id,entry.manifest.version);extensions.retain(entry.manifest.id,entry.manifest.version,art.id);}resolveStyle(art);resolveTemplate(art);}}
   const recovered=await recoverLatestProject(storage,{validate:restoreDesigns});
   const project = recovered.project ?? createEmptyProject();
   const startupRecovery=recovered.recovery;

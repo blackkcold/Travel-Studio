@@ -36,6 +36,12 @@ describe('document transactions', () => {
     const store = new DocumentStore(createEmptyProject()); store.transact('rename', draft => { draft.name = 'next'; });
     expect(store.retentionDocuments()).toHaveLength(2); expect(store.exportHistory().past[0].label).toBe('rename');
   });
+  it('discards only the redo branch for a new selection, without publishing a document revision', () => {
+    const store = new DocumentStore(createEmptyProject()); store.transact('first', draft => { draft.name = 'first'; }); store.transact('second', draft => { draft.name = 'second'; }); store.undo();
+    const current = store.document; expect(store.canRedo).toBe(true); store.discardRedo();
+    expect(store.document).toBe(current); expect(store.canRedo).toBe(false); expect(store.canUndo).toBe(true); expect(store.undoLabel).toBe('first');
+    store.undo(); expect(store.document.name).toBe('我的旅行');
+  });
 });
 
 describe('safe project schema and restoration', () => {
