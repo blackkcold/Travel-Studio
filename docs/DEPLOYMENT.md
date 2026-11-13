@@ -20,6 +20,18 @@ The `dist/` directory is a static application and can be served on an HTTPS orig
 
 This release does not install a service worker/PWA or bundle offline map tiles. Keeping a saved map image is different from having complete offline map editing.
 
+## GitHub Pages deployment
+
+The static web edition is built from `main` by [`.github/workflows/pages.yml`](../.github/workflows/pages.yml). Its intended public URL is **https://blackkcold.github.io/Travel-Studio/**.
+
+1. Once per repository, open **Settings → Pages → Build and deployment → Source** and select **GitHub Actions**. This requires repository administration privileges and cannot be done by an ordinary workflow `GITHUB_TOKEN`.
+2. A push to `main` (or a manual workflow dispatch) runs type/architecture checks and unit tests, builds with `VITE_STATIC_HOSTING=github-pages`, verifies relative asset paths and deploys the static artifact.
+3. The existing Vite `base: './'` supports the `/Travel-Studio/` repository subpath. If Pages was not enabled when the workflow ran, enable it in Settings and rerun the workflow. A successful build does not, by itself, establish that Pages is live.
+
+There is **no Node.js gateway or `/api/ai/*` endpoint** on Pages. AI stylization and landmark suggestions are disabled; the core local photo processing, third-party map/search services, editing and export still operate. No secret or `.env` is included in the browser build. Maps require internet connectivity and depend on provider policies, network/CORS behavior and attribution.
+
+Photos and projects stay in the current browser's IndexedDB, **not on GitHub**. The hosted HTTPS origin does not share its saved data with `http://127.0.0.1:4173`; use `.travelstudio` export/import for migration or backups. This deployment is not an offline PWA and does not by itself certify performance on physical devices.
+
 ## Optional AI gateway
 
 Copy `.env.example` to `.env` and set only the services you want to enable. Node loads `.env` at startup; credentials stay in the loopback process.

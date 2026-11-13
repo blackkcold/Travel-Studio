@@ -2,7 +2,9 @@
 
 把照片与走过的地方，制作成可收藏、可继续编辑的旅行作品。
 
-[English](README.en.md) · [下载发行包](https://github.com/blackkcold/Travel-Studio/releases/latest) · [使用说明](docs/USER_GUIDE.md) · [验收记录](docs/ACCEPTANCE.md)
+[在线网页版（启用 Pages 后）](https://blackkcold.github.io/Travel-Studio/) · [English](README.en.md) · [下载发行包](https://github.com/blackkcold/Travel-Studio/releases/latest) · [使用说明](docs/USER_GUIDE.md) · [验收记录](docs/ACCEPTANCE.md)
+
+GitHub Pages 提供免安装静态网页版（地图、编辑、导出和项目保存在当前浏览器）；**不包含本地 AI 网关**。网页版与 `127.0.0.1` 的浏览器存储互不相通，迁移请导出／导入 `.travelstudio` 项目包。
 
 ## 开始使用
 

@@ -1,0 +1,56 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: travel-studio-github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Verify and build static site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - name: Build GitHub Pages edition without a server gateway
+        run: npm run build
+        env:
+          VITE_STATIC_HOSTING: github-pages
+      - name: Verify relative paths for /Travel-Studio/
+        run: node scripts/verify-pages-build.mjs
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist/
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Verify Pages configuration
+        uses: actions/configure-pages@v5
+      - name: Deploy static site
+        id: deployment
+        uses: actions/deploy-pages@v5

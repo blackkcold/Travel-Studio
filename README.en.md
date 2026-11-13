@@ -2,7 +2,9 @@
 
 Turn local photos and visited places into travel keepsakes you can edit, export and reopen.
 
-[中文](README.md) · [Download](https://github.com/blackkcold/Travel-Studio/releases/latest) · [Acceptance evidence](docs/ACCEPTANCE.md)
+[Open web app (after Pages is enabled)](https://blackkcold.github.io/Travel-Studio/) · [中文](README.md) · [Download](https://github.com/blackkcold/Travel-Studio/releases/latest) · [Acceptance evidence](docs/ACCEPTANCE.md)
+
+The GitHub Pages edition runs without Node.js. Maps, editing, export, and browser-local storage remain available; the **optional local AI gateway is not hosted**. Data do not sync with `127.0.0.1`; transfer by exporting/importing `.travelstudio` packages.
 
 ## Run
 
