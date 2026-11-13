@@ -3,8 +3,8 @@ import workerURL from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type * as GeoJSON from 'geojson';
 import type { CameraSpec, Coordinate, JourneySnapshot } from '../domain';
 import { minimalBounds } from '../geo';
-import { attributionForMap, throwIfAborted } from '../providers';
-import { compileMapStyle, DEFAULT_MAP_RECIPE, OPENFREEMAP_SOURCE, photoGeoJSON, routeGeoJSON, visitGeoJSON,
+import { attributionForMap, PROVIDER_POLICIES, throwIfAborted } from '../providers';
+import { compileMapStyle, DEFAULT_MAP_RECIPE, OPENFREEMAP_SOURCE, photoGeoJSON, photoIdentity, routeGeoJSON, visitGeoJSON,
   type AtlasPhotoPoint, type MapArtRecipe, type MapSourceAdapter } from './style';
 
 setWorkerUrl(workerURL);
@@ -20,6 +20,8 @@ export interface MapControllerOptions {
   showRoute?: boolean;
   showArrows?: boolean;
   showStops?: boolean;
+  showNumbers?: boolean;
+  showNames?: boolean;
   interactive?: boolean;
   pixelRatio?: number;
   onCameraChange?: (camera: CameraSpec) => void;
@@ -35,11 +37,11 @@ export interface MapController {
   setPhotos(photos: AtlasPhotoPoint[]): void;
   setStyle(style: MapArtRecipe): void;
   setTerrain(enabled: boolean, exaggeration?: number, provider?: CameraSpec['terrainProvider']): void;
-  setVisibility(options: {route?: boolean; arrows?: boolean; stops?: boolean}): void;
+  setVisibility(options: {route?: boolean; arrows?: boolean; stops?: boolean; numbers?: boolean; names?: boolean}): void;
   fitCoordinates(coordinates: Coordinate[], padding?: number): void;
   project(coordinate: Coordinate): {x: number; y: number};
   unproject(point: {x:number; y:number}): Coordinate;
-  getVisiblePhotos(): Array<AtlasPhotoPoint & {x:number; y:number}>;
+  getVisiblePhotos(): Array<AtlasPhotoPoint & {id:string;photoId:string;x:number; y:number}>;
   onMove(callback: (camera: CameraSpec) => void): () => void;
   onClick(callback: (selection: MapSelectEvent) => void): () => void;
   onRender(callback: () => void): () => void;
@@ -68,6 +70,7 @@ export interface MapRenderReceipt {
   barriers: {tiles: true; glyphs: true; terrain: 'ready' | 'not-requested'; sourceErrors: 0};
   attribution: string[];
   buildingHeights: 'source-height-or-estimate';
+  annotationStrategy: 'screen-overlay-no-depth-test';
   durationMs: number;
   completedAt: string;
 }
@@ -110,7 +113,7 @@ function createMap(container: HTMLElement, options: MapControllerOptions, forExp
   try {
     return new LibreMap({
       container, style:compileMapStyle({camera:options.camera,recipe:options.style,source:options.source,journey:options.journey,photoPoints:options.photoPoints,
-        showRoute:options.showRoute,showArrows:options.showArrows,showStops:options.showStops}),
+        showRoute:options.showRoute,showArrows:options.showArrows,showStops:options.showStops,showNumbers:options.showNumbers,showNames:options.showNames}),
       ...cameraOptions(options.camera),interactive:options.interactive !== false, attributionControl:forExport ? false : {compact:true},
       pixelRatio:options.pixelRatio ?? Math.min(globalThis.devicePixelRatio || 1,2), maxCanvasSize:[4096,4096],
       canvasContextAttributes:{preserveDrawingBuffer:forExport,antialias:true,powerPreference:'high-performance',failIfMajorPerformanceCaveat:false},
@@ -140,7 +143,7 @@ export function createMapController(container: HTMLElement, initial: MapControll
   // not drop the next selection revision; setData itself coalesces newer input.
   const updateSources = () => {if(disposed)return;sourceUpdate('journey',routeGeoJSON(state.journey));sourceUpdate('visits',visitGeoJSON(state.journey));sourceUpdate('photos',photoGeoJSON(state.photoPoints ?? []));};
   const rebuildStyle = () => {if(disposed)return;map.setStyle(compileMapStyle({camera:state.camera,recipe:state.style,source:state.source,journey:state.journey,photoPoints:state.photoPoints,
-    showRoute:state.showRoute,showArrows:state.showArrows,showStops:state.showStops}));};
+    showRoute:state.showRoute,showArrows:state.showArrows,showStops:state.showStops,showNumbers:state.showNumbers,showNames:state.showNames}));};
   map.on('load', () => {updateSources();readyResolve();initial.onReady?.();});
   map.on('style.load',updateSources);
   map.on('moveend', () => {if(disposed)return;state.camera=cameraState(map,state.camera);for(const fn of cameraListeners)fn(structuredClone(state.camera));});
@@ -190,9 +193,12 @@ export function createMapController(container: HTMLElement, initial: MapControll
     setTerrain(enabled,exaggeration=1,provider=state.camera.terrainProvider){state.camera={...cameraState(map,state.camera),terrain:enabled,exaggeration,terrainProvider:provider};rebuildStyle();},
     setVisibility(options){
       if(options.route!==undefined)state.showRoute=options.route;if(options.arrows!==undefined)state.showArrows=options.arrows;if(options.stops!==undefined)state.showStops=options.stops;
+      if(options.numbers!==undefined)state.showNumbers=options.numbers;if(options.names!==undefined)state.showNames=options.names;
       for(const id of ['journey-line','journey-casing'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',state.showRoute===false?'none':'visible');
       if(map.getLayer('journey-arrows'))map.setLayoutProperty('journey-arrows','visibility',state.showRoute===false || state.showArrows===false?'none':'visible');
-      for(const id of ['visit-points','visit-numbers'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',state.showStops===false?'none':'visible');
+      if(map.getLayer('visit-points'))map.setLayoutProperty('visit-points','visibility',state.showStops===false?'none':'visible');
+      if(map.getLayer('visit-numbers'))map.setLayoutProperty('visit-numbers','visibility',state.showStops===false || state.showNumbers===false?'none':'visible');
+      if(map.getLayer('visit-names'))map.setLayoutProperty('visit-names','visibility',state.showStops===false || state.showNames!==true?'none':'visible');
     },
     fitCoordinates(coordinates,padding=72){
       if(!coordinates.length || disposed)return;
@@ -205,7 +211,7 @@ export function createMapController(container: HTMLElement, initial: MapControll
     getVisiblePhotos(){
       if(disposed || !map.isStyleLoaded())return[];
       const ids=new Set(map.queryRenderedFeatures({layers:['photo-points']}).map(f=>String(f.properties?.photoId)));
-      return (state.photoPoints ?? []).filter(p=>ids.has(p.id)).slice(0,24).map(p=>({...p,...controller.project(p.coordinate)}));
+      return (state.photoPoints ?? []).filter(p=>ids.has(photoIdentity(p))).slice(0,24).map(p=>({...p,id:photoIdentity(p),photoId:photoIdentity(p),...controller.project(p.coordinate)}));
     },
     onMove(fn){cameraListeners.add(fn);return()=>cameraListeners.delete(fn);},
     onClick(fn){clickListeners.add(fn);return()=>clickListeners.delete(fn);},
@@ -282,8 +288,8 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
       terrainProvider:spec.camera.terrain?spec.camera.terrainProvider:undefined,terrainExaggeration:spec.camera.exaggeration,camera:cameraState(map,spec.camera),
       logicalWidth:width,logicalHeight:height,width:canvas.width,height:canvas.height,pixelRatio:map.getPixelRatio(),selectionRevision:spec.journey?.selectionRevision,
       barriers:{tiles:true,glyphs:true,terrain:spec.camera.terrain?'ready':'not-requested',sourceErrors:0},
-      attribution:source.id==='openfreemap'?attributionForMap(spec.camera.terrain,spec.camera.terrainProvider,true):source.policy.printAttribution,
-      buildingHeights:'source-height-or-estimate',durationMs:performance.now()-started,completedAt:new Date().toISOString()};
+      attribution:source.id==='openfreemap'?attributionForMap(spec.camera.terrain,spec.camera.terrainProvider,true):[...source.policy.printAttribution,...(spec.camera.terrain?PROVIDER_POLICIES[spec.camera.terrainProvider].printAttribution:[])],
+      buildingHeights:'source-height-or-estimate',annotationStrategy:'screen-overlay-no-depth-test',durationMs:performance.now()-started,completedAt:new Date().toISOString()};
     return{canvas,annotations,receipt,dispose(){canvas.width=1;canvas.height=1;}};
   } finally {map?.remove();holder.remove();}
 }

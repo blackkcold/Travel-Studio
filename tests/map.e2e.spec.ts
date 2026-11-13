@@ -8,13 +8,16 @@ test('live Photon → vector map → real terrain → fixed-camera 4096 PNG',asy
   await page.goto('/tests/fixtures/map.html');
   await page.getByLabel('地点搜索').fill('日本京都清水寺');await page.getByRole('button',{name:'提交查询'}).click();
   await expect(page.locator('#search-status')).toContainText('找到',{timeout:45_000});
-  await expect(page.locator('#candidates')).toContainText('京都');
-  await expect(page.locator('#candidates')).toContainText('清水寺');
+  // Photon honours Accept-Language; location identity must not depend on runner locale.
+  await expect(page.locator('#candidates')).toContainText(/京都|Kyoto/i);
+  await expect(page.locator('#candidates')).toContainText(/清水寺|Kiyomizu/i);
+  await expect(page.locator('#candidates')).toContainText('W:336641107');
   const locationEvidence=await page.locator('#candidates').innerText();
   await testInfo.attach('real-search-candidates',{body:locationEvidence,contentType:'text/plain'});
   for(const mode of ['2d','3d']) {
     await page.locator(`#export-${mode}`).click();
-    await expect(page.locator('#export-status')).toContainText('导出完成',{timeout:180_000});
+    await expect(page.locator('#export-status')).toContainText(/导出完成|导出失败/,{timeout:180_000});
+    if((await page.locator('#export-status').innerText()).includes('导出失败'))throw new Error(`${await page.locator('#export-status').innerText()} ${await page.locator('#receipt').innerText()}`);
     const receipt=JSON.parse(await page.locator('#receipt').innerText());
     expect(receipt.output.width).toBe(4096);expect(receipt.output.height).toBe(2867);
     expect(receipt.output.barriers.sourceErrors).toBe(0);expect(receipt.output.barriers.terrain).toBe(mode==='3d'?'ready':'not-requested');

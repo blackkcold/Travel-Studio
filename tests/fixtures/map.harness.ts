@@ -54,7 +54,7 @@ async function runExport(terrain:boolean):Promise<void> {
     element<HTMLImageElement>('output').src=png;
     const link=element<HTMLAnchorElement>('download');link.href=png;link.download=`travel-studio-${terrain?'terrain':'2d'}-4096.png`;link.hidden=false;
     element('receipt').textContent=JSON.stringify(receipt,null,2);status.textContent=`导出完成：${output.canvas.width} × ${output.canvas.height} PNG`;
-  }catch(error){status.textContent=`导出失败：${error instanceof Error?error.message:String(error)}`;element<HTMLAnchorElement>('download').hidden=true;}
+  }catch(error){status.textContent=`导出失败：${error instanceof Error?error.message:String(error)}`;element('receipt').textContent=JSON.stringify(error,null,2);element<HTMLAnchorElement>('download').hidden=true;}
   finally{preview?.dispose();output?.dispose();exporting=false;}
 }
 element('export-2d').addEventListener('click',()=>void runExport(false));element('export-3d').addEventListener('click',()=>void runExport(true));

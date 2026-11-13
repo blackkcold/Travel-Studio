@@ -85,11 +85,12 @@ export function visitGeoJSON(journey?: JourneySnapshot): GeoJSON.FeatureCollecti
   }))};
 }
 
-export interface AtlasPhotoPoint { id: string; coordinate: Coordinate; selected?: boolean; name?: string; thumbnailURL?: string }
+export type AtlasPhotoPoint = ({ id: string; photoId?: string } | { id?: string; photoId: string }) & {coordinate: Coordinate; selected?: boolean; name?: string; thumbnailURL?: string};
+export function photoIdentity(point:AtlasPhotoPoint):string {const id=point.photoId ?? point.id;if(!id)throw new Error('地图照片缺少稳定 photoId');return id;}
 export function photoGeoJSON(photos: AtlasPhotoPoint[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
-  const unique = new Map(photos.map(p => [p.id,p]));
-  return {type:'FeatureCollection',features:[...unique.values()].map(p => ({type:'Feature',id:p.id,
-    properties:{photoId:p.id,name:p.name ?? '',selected:Boolean(p.selected)}, geometry:{type:'Point',coordinates:p.coordinate}}))};
+  const unique = new Map(photos.map(p => [photoIdentity(p),p]));
+  return {type:'FeatureCollection',features:[...unique.values()].map(p => ({type:'Feature',id:photoIdentity(p),
+    properties:{photoId:photoIdentity(p),name:p.name ?? '',selected:Boolean(p.selected)}, geometry:{type:'Point',coordinates:p.coordinate}}))};
 }
 
 export interface MapStyleOptions {
@@ -100,6 +101,8 @@ export interface MapStyleOptions {
   showRoute?: boolean;
   showArrows?: boolean;
   showStops?: boolean;
+  showNumbers?: boolean;
+  showNames?: boolean;
   photoPoints?: AtlasPhotoPoint[];
 }
 
@@ -136,7 +139,8 @@ export function compileMapStyle(options: MapStyleOptions): StyleSpecification {
     {id:'journey-line',type:'line',source:'journey',layout:{'line-cap':'round','line-join':'round',visibility:options.showRoute === false ? 'none':'visible'},paint:{'line-color':p.route,'line-width':3}},
     {id:'journey-arrows',type:'symbol',source:'journey',layout:{'symbol-placement':'line','symbol-spacing':120,'text-field':'›','text-font':font,'text-size':23,'text-keep-upright':false,'text-rotation-alignment':'map','text-allow-overlap':true,visibility:options.showRoute === false || options.showArrows === false ? 'none':'visible'},paint:{'text-color':p.route,'text-halo-color':'#ffffff','text-halo-width':1}},
     {id:'visit-points',type:'circle',source:'visits',layout:{visibility:options.showStops === false?'none':'visible'},paint:{'circle-radius':11,'circle-color':p.route,'circle-stroke-color':'#ffffff','circle-stroke-width':3}},
-    {id:'visit-numbers',type:'symbol',source:'visits',layout:{'text-field':['to-string',['get','number']],'text-font':font,'text-size':11,'text-allow-overlap':true,visibility:options.showStops === false?'none':'visible'},paint:{'text-color':'#ffffff'}},
+    {id:'visit-numbers',type:'symbol',source:'visits',layout:{'text-field':['to-string',['get','number']],'text-font':font,'text-size':11,'text-allow-overlap':true,visibility:options.showStops === false || options.showNumbers === false?'none':'visible'},paint:{'text-color':'#ffffff'}},
+    {id:'visit-names',type:'symbol',source:'visits',layout:{'text-field':['get','name'],'text-font':font,'text-size':12,'text-anchor':'top','text-offset':[0,1.4],'text-allow-overlap':false,visibility:options.showStops === false || options.showNames !== true?'none':'visible'},paint:{'text-color':p.label,'text-halo-color':p.land,'text-halo-width':2}},
     {id:'photo-clusters',type:'circle',source:'photos',filter:['has','point_count'],paint:{'circle-color':p.route,'circle-radius':['step',['get','point_count'],17,10,21,100,26],'circle-stroke-color':'#ffffff','circle-stroke-width':3}},
     {id:'photo-counts',type:'symbol',source:'photos',filter:['has','point_count'],layout:{'text-field':['get','point_count_abbreviated'],'text-font':font,'text-size':12},paint:{'text-color':'#ffffff'}},
     {id:'photo-points',type:'circle',source:'photos',filter:['!', ['has','point_count']],paint:{'circle-color':['case',['get','selected'],p.route,p.roadCase],'circle-radius':7,'circle-stroke-color':'#ffffff','circle-stroke-width':2}},
