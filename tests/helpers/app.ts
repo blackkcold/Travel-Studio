@@ -14,6 +14,8 @@ export const UNKNOWN_PHOTO = resolve('tests/fixtures/photos/synthetic-no-locatio
 export const TITLE = '京都 · 七月的三站';
 
 export function observeNetwork(page: Page) {
+  page.setDefaultTimeout(30_000);
+  page.setDefaultNavigationTimeout(45_000);
   const writes: Array<{ method: string; url: string }> = [], errors: string[] = [], origins = new Map<string, number>();
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => {

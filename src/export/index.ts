@@ -1,6 +1,6 @@
 import type { ArtworkDocument, ProjectDocument, PhotoEdit, MapSnapshotState } from '../domain';
 import { clone } from '../domain';
-import { mapRecipe } from '../design-packages';
+import { mapRecipe, resolveStyle } from '../design-packages';
 import { renderArtwork, textOverflowNodes, isNodeVisible, wrapText, type CompositionResources } from '../composition';
 import type { MapRenderSpec, MapFrame, MapSourceAdapter, MapRenderReceipt } from '../map';
 
@@ -174,13 +174,23 @@ export async function exportArtwork(project: ProjectDocument, artworkId: string,
       // Independent trim/outer rounding preserves exact mm-to-pixel results (odd bleed may differ by 1px).
       trim = document.createElement('canvas'); trim.width = dims.trimWidth; trim.height = dims.trimHeight;
       const tc = trim.getContext('2d'); if (!tc) throw new Error('无法创建印刷裁切画布。');
+      const paper = resolveStyle(art).palette.paper;
+      tc.fillStyle = paper; tc.fillRect(0, 0, trim.width, trim.height);
       tc.scale(trim.width / art.artboard.width, trim.height / art.artboard.height); renderArtwork(tc, art, prepared.resources, { intent: spec.intent, transparent: false, margin: 0 });
       const bx = dims.bleedX, by = dims.bleedY, right = dims.bleedRight, bottom = dims.bleedBottom;
+      // Extend exact edge pixels. Filtered one-pixel strips and self-sampling can blend with
+      // the unpainted outer canvas, making print corners translucent despite an opaque trim.
+      ctx.fillStyle = paper; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(trim, bx, by);
       if (bx) ctx.drawImage(trim, 0, 0, 1, trim.height, 0, by, bx, trim.height);
       if (right) ctx.drawImage(trim, trim.width - 1, 0, 1, trim.height, bx + trim.width, by, right, trim.height);
-      if (by) ctx.drawImage(canvas, 0, by, canvas.width, 1, 0, 0, canvas.width, by);
-      if (bottom) ctx.drawImage(canvas, 0, by + trim.height - 1, canvas.width, 1, 0, by + trim.height, canvas.width, bottom);
+      if (by) ctx.drawImage(trim, 0, 0, trim.width, 1, bx, 0, trim.width, by);
+      if (bottom) ctx.drawImage(trim, 0, trim.height - 1, trim.width, 1, bx, by + trim.height, trim.width, bottom);
+      if (bx && by) ctx.drawImage(trim, 0, 0, 1, 1, 0, 0, bx, by);
+      if (right && by) ctx.drawImage(trim, trim.width - 1, 0, 1, 1, bx + trim.width, 0, right, by);
+      if (bx && bottom) ctx.drawImage(trim, 0, trim.height - 1, 1, 1, 0, by + trim.height, bx, bottom);
+      if (right && bottom) ctx.drawImage(trim, trim.width - 1, trim.height - 1, 1, 1, bx + trim.width, by + trim.height, right, bottom);
     } else { ctx.scale(dims.scale, dims.scale); renderArtwork(ctx, art, prepared.resources, { intent: spec.intent, transparent: spec.transparent && spec.format !== 'jpeg', background: spec.background, margin: dims.margin }); }
     abort(signal); onStage?.('编码并核验真实文件');
     const mime = `image/${spec.format}`; let blob = await canvasBlob(canvas, mime, spec.quality);
