@@ -6,7 +6,7 @@
 
 下载本页的 `Travel-Studio-1.0.0.zip` 或 `.tar.gz`，解压并安装 **Node.js 24**。Windows 运行 `start.bat`；macOS 运行 `start.command`；Linux 运行 `sh start.sh`，然后打开 **http://127.0.0.1:4173**。
 
-发行包包含已构建应用、启动服务、使用文档、扩展样例与第三方许可。无需安装开发依赖。独立的 `Travel-Studio-1.0.0-verification-evidence.zip` 保留本次发布提交的测试样张、回执、截图及录像；`BUILD.json` 记录源码提交和运行地址，`SHA256SUMS.txt` 提供三份归档的校验值。
+发行包包含已构建应用、启动服务、使用文档、两份可继续编辑的合成示例项目、扩展样例与第三方许可。示例在 `examples/projects` 中，附来源与文件校验记录。无需安装开发依赖。独立的 `Travel-Studio-1.0.0-verification-evidence.zip` 保留本次发布提交的测试样张、回执、截图及录像；`BUILD.json` 记录源码提交和运行地址，`SHA256SUMS.txt` 提供三份归档的校验值。
 
 ## 本版功能
 

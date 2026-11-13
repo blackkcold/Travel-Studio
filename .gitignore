@@ -10,3 +10,5 @@ coverage/
 tmp/
 verification-results/
 release/
+examples/projects/*.travelstudio
+examples/projects/provenance.json

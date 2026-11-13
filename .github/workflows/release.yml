@@ -38,8 +38,6 @@ jobs:
           if(!/^\d+\.\d+\.\d+$/.test(pkg.version)||release.version!==pkg.version||release.status!=='ready')throw new Error('Release manifest does not match the tested package.');
           fs.appendFileSync(process.env.GITHUB_OUTPUT,`version=${pkg.version}\ntag=v${pkg.version}\n`);
           JS
-      - name: Package the tested build
-        run: node scripts/package-release.mjs
       - uses: actions/download-artifact@v4
         with:
           pattern: acceptance-evidence-*
@@ -48,6 +46,10 @@ jobs:
         with:
           name: live-service-evidence
           path: release/verification-evidence/live-services/
+      - name: Collect accepted project examples
+        run: node scripts/collect-release-examples.mjs
+      - name: Package the tested build
+        run: node scripts/package-release.mjs
       - name: Record the verified source and run
         run: |
           node --input-type=module <<'JS'
