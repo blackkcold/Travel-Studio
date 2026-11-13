@@ -231,7 +231,7 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
         const startup = restored.getByRole('dialog', { name: '旅行项目', exact: true });
         await expect(startup).toBeVisible({ timeout: 90_000 });
         await expect(startup).toContainText('创建自动恢复副本');
-        const damaged = startup.locator('.project-list > button').filter({ has: restored.locator('strong', { hasText: new RegExp(`^${archive.project.name}$`) }) });
+        const damaged = startup.getByTestId(`project-${archive.project.id}`);
         await expect(damaged).toContainText('仅恢复');
         await damaged.click();
         const localRecovery = startup.getByRole('region', { name: '项目只读恢复', exact: true });

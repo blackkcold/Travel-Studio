@@ -55,10 +55,14 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
-          const record={version:pkg.version,commit:process.env.GITHUB_SHA,run:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,generatedAt:new Date().toISOString()};
+          const record={version:pkg.version,commit:process.env.GITHUB_SHA,run:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,generatedAt:new Date().toISOString(),verification:{result:'passed',workflow:'.github/workflows/quality.yml',browserSuites:['app','map','photo','visual','visits']}};
           const text=JSON.stringify(record,null,2)+'\n';
           fs.writeFileSync(`release/Travel-Studio-${pkg.version}/BUILD.json`,text);
           fs.writeFileSync('release/verification-evidence/BUILD.json',text);
+          const reportPath=`release/Travel-Studio-${pkg.version}/docs/ACCEPTANCE.md`;
+          const report=fs.readFileSync(reportPath,'utf8');
+          const verified=`## 本发行包的最终门禁\n\n版本 ${record.version}，源码提交 \`${record.commit}\`。本包由 [正式发布流水线](${record.run}) 在核心类型／模块／单元测试／构建／真实服务检查和 app、map、photo、visual、visits 五套 Chromium 验收全部通过后生成。对应实际文件与报告保存在同版 verification-evidence.zip；BUILD.json 记录版本、提交和运行地址。\n\n下文保留发布候选阶段的逐项证据、修复过程及覆盖边界；其中注明的真机、长期性能等未验证范围仍然有效，不能由流水线成功推定通过。\n\n`;
+          fs.writeFileSync(reportPath,report.replace('# 验收范围与证据\n\n','# 验收范围与证据\n\n'+verified));
           JS
       - name: Smoke-test the production package
         env:
