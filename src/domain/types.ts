@@ -145,6 +145,26 @@ export interface ElementVisibility {
 }
 export interface FrozenPhotoBinding { photoId: string; assetId: string; thumbnailAssetId?: string; proxyAssetId?: string; derivedAssetId?: string; name: string; width: number; height: number }
 export interface ArtworkMetadata { title: string; date: string; message: string; weather?: string; userOverrides?: string[] }
+/** One projected, frozen geographic binding shared by the map, editor and exporter. */
+export interface ProjectedGeoAnchor {
+  visitId: string; placeId?: string; number: number | null; name: string;
+  x: number; y: number; visible: boolean; coordinate?: Coordinate; photoIds?: string[];
+  precision?: PlaceRecord['precision'];
+}
+export interface MapSnapshotState {
+  version: 1;
+  inputHash: string;
+  logicalWidth: number;
+  logicalHeight: number;
+  width: number;
+  height: number;
+  camera: CameraSpec;
+  annotations: ProjectedGeoAnchor[];
+  attribution: string[];
+  printAttribution: string[];
+  snapshotBundleAllowed: boolean;
+  receipt: Record<string, unknown>;
+}
 export interface ArtworkDocument {
   id: string;
   name: string;
@@ -166,6 +186,8 @@ export interface ArtworkDocument {
   seed: number;
   previewAssetId?: string;
   mapSnapshotAssetId?: string;
+  mapSnapshot?: MapSnapshotState;
+  mapSource?: Record<string, unknown>;
   attributionIds: string[];
   embeddedStyle?: Record<string, unknown>;
   embeddedTemplate?: Record<string, unknown>;

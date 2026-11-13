@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TaskScheduler, ResourceLeases, redactDiagnostic } from '../src/runtime';
 import { ExtensionRegistry, validateExtension } from '../src/plugins';
+import { getDesignManifest, STYLES, TEMPLATES } from '../src/design-packages';
 
 const target = { projectId: 'p', artworkId: 'a', inputHash: 'first' };
 describe('task isolation and resource ownership', () => {
@@ -57,5 +58,14 @@ describe('declarative extension boundaries', () => {
     expect(() => validateExtension({ ...style, recipe: { ...style.recipe, asset: '<svg onload="alert(1)"></svg>' } })).toThrow();
     expect(() => validateExtension({ ...style, permissions: ['network-map-data'] })).toThrow();
     expect(() => validateExtension({ ...style, recipe: { ...style.recipe, texture: 'https://example.com/image.png' } })).toThrow();
+  });
+  it('accepts all frozen built-in design manifests without permitting unknown layout engines', () => {
+    for (const definition of STYLES) expect(validateExtension(getDesignManifest('style', definition.id)).id).toBe(definition.id);
+    for (const definition of TEMPLATES) expect(validateExtension(getDesignManifest('template', definition.id)).id).toBe(definition.id);
+    const manifest = getDesignManifest('template', 'card-split');
+    expect(() => validateExtension({ ...manifest, recipe: { ...manifest.recipe, layoutEngine: 'arbitrary-code' } })).toThrow();
+    expect(() => validateExtension({ ...manifest, recipe: { ...manifest.recipe, layoutId: 'uninstalled-layout' } })).toThrow();
+    expect(() => validateExtension({ ...manifest, recipe: { ...manifest.recipe, family: 'T06' } })).toThrow();
+    expect(() => validateExtension({ ...manifest, recipe: { ...manifest.recipe, ratio: [0, 2] } })).toThrow();
   });
 });

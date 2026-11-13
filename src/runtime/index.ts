@@ -36,7 +36,7 @@ interface QueuedTask<T = unknown> {
 export class TaskScheduler {
   private queue: QueuedTask[] = [];
   private jobs = new Map<string, QueuedTask>();
-  private latest = new Map<string, { generation: number; inputHash: string }>();
+  private latest = new Map<string, TaskTarget>();
   private listeners = new Set<(event: TaskEvent) => void>();
   private active = 0;
   private closed = false;
@@ -51,7 +51,7 @@ export class TaskScheduler {
   list(): TaskEvent[] { return [...this.jobs.values()].map(job => structuredClone(job.event)); }
   isCurrent(key: string, target: TaskTarget): boolean {
     const latest = this.latest.get(key);
-    return latest?.generation === target.generation && latest.inputHash === target.inputHash;
+    return latest?.generation === target.generation && latest.inputHash === target.inputHash && latest.projectId === target.projectId && latest.artworkId === target.artworkId && latest.targetNodeId === target.targetNodeId && latest.selectionRevision === target.selectionRevision && latest.layoutRevision === target.layoutRevision;
   }
   invalidate(key: string): void {
     this.latest.delete(key);
@@ -72,7 +72,7 @@ export class TaskScheduler {
     if (previous && generation <= previous.generation) throw new StaleTaskError();
     if (options.replace !== false) this.invalidate(options.key);
     const target: TaskTarget = { ...options.target, generation };
-    this.latest.set(options.key, { generation, inputHash: target.inputHash });
+    this.latest.set(options.key, { ...target });
     const id = `task-${Date.now().toString(36)}-${++this.serial}`;
     const controller = new AbortController();
     let resolve!: (value: T) => void;

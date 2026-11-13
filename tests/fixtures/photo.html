@@ -1,0 +1,7 @@
+<!doctype html><html lang="zh-CN"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Travel Studio photo contract test</title>
+<style>body{font:16px system-ui;background:#f6f2e8;color:#234842;margin:32px}h1{font:32px Georgia}pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto}#styles{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}figure{margin:0}figure img{width:100%;max-height:280px;object-fit:contain}label,button{padding:10px;display:inline-block}#output{display:none}</style>
+<h1>Photo pipeline contract test</h1><p>These fixtures are procedural images with synthetic metadata. They do not represent real photos or travel evidence.</p>
+<label>导入测试照片<input type="file" id="files" accept="image/jpeg,image/png,image/webp" multiple></label>
+<button id="process" disabled>运行六种本地配方和三格式编码</button>
+<p id="status">等待文件</p><pre id="result"></pre><pre id="encoding"></pre><div id="styles"></div>
+<script type="module" src="/tests/fixtures/photo.harness.ts"></script></html>

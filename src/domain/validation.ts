@@ -8,6 +8,7 @@ const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFi
 const coordinate = (x: unknown): boolean => Array.isArray(x) && x.length === 2 && finite(x[0]) && finite(x[1]) && Math.abs(x[0]) <= 180 && Math.abs(x[1]) <= 90;
 const enumOf = (x: unknown, choices: string[]): boolean => typeof x === 'string' && choices.includes(x);
 const unique = (xs: unknown[]): boolean => new Set(xs).size === xs.length;
+const bounded = (value: unknown, min: number, max: number) => finite(value) && value >= min && value <= max;
 
 export function validateProject(input: unknown): ValidationResult {
   const issues: DomainIssue[] = [];
@@ -56,7 +57,13 @@ export function validateProject(input: unknown): ValidationResult {
     if (!record(value)) { issue(path, '缺少时间证据'); return; }
     check(enumOf(value.precision, ['instant', 'local', 'date', 'unknown']), path, '时间精度无效');
     check(enumOf(value.source, ['exif', 'user', 'provider', 'unknown']), path, '时间来源无效');
-    if (value.precision !== 'unknown') check(text(value.value), `${path}.value`, '已知时间必须有原值');
+    if (value.precision !== 'unknown') {
+      check(text(value.value), `${path}.value`, '已知时间必须有原值');
+      const match = typeof value.value === 'string' ? value.value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/) : null;
+      if (!match) issue(`${path}.value`, '时间格式不正确');
+      else { const [year, month, day, hour, minute, second] = match.slice(1).map(x => Number(x ?? 0)); const date = new Date(0); date.setUTCFullYear(year, month - 1, day); check(year > 0 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day && hour <= 23 && minute <= 59 && second <= 59, `${path}.value`, '日期或时刻不存在'); }
+      if (value.precision === 'local') check(typeof value.value === 'string' && !/(?:Z|[+-]\d{2}:\d{2})$/.test(value.value), `${path}.value`, '本地墙上时间不得伪装为绝对时刻');
+    }
     if (value.offset !== undefined) check(typeof value.offset === 'string' && /^(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/.test(value.offset), `${path}.offset`, '时区偏移无效');
     if (value.precision === 'date') check(typeof value.value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.value), `${path}.value`, '日期必须是 YYYY-MM-DD');
     if (value.precision === 'instant') check(typeof value.value === 'string' && (/([+-]\d{2}:\d{2}|Z)$/.test(value.value) || typeof value.offset === 'string') && Number.isFinite(Date.parse(value.utc as string || `${value.value}${/([+-]\d{2}:\d{2}|Z)$/.test(String(value.value)) ? '' : value.offset ?? ''}`)), `${path}.value`, '绝对时刻缺少可核对的时区偏移');
@@ -78,19 +85,37 @@ export function validateProject(input: unknown): ValidationResult {
     if (!Array.isArray(value.predicates)) { issue(`${path}.predicates`, '选择条件必须是数组'); return; }
     for (const p of value.predicates) { if (!record(p)) { issue(`${path}.predicates`, '选择条件无效'); continue; } if (p.type === 'date') check(text(p.anchor) && /^\d{4}-\d{2}-\d{2}$/.test(p.anchor) && Number.isInteger(p.daysBefore) && Number.isInteger(p.daysAfter) && (p.daysBefore as number) >= 0 && (p.daysAfter as number) >= 0, `${path}.predicates`, '日期范围无效'); else if (p.type === 'radius') check(coordinate(p.center) && finite(p.radiusKm) && p.radiusKm >= 0 && p.radiusKm <= 40_100, `${path}.predicates`, '地理半径无效'); else if (p.type === 'bounds') check([p.west, p.south, p.east, p.north].every(finite) && (p.south as number) <= (p.north as number), `${path}.predicates`, '地图范围无效'); else issue(`${path}.predicates`, '未知选择条件'); }
   }
+  function crop(value: unknown, path: string): void { if (value === undefined) return; if (!record(value) || !bounded(value.x, 0, 1) || !bounded(value.y, 0, 1) || !bounded(value.zoom, 1, 32) || !bounded(value.rotation, -360, 360)) issue(path, '裁切焦点、倍率或旋转超范围'); }
   artworks.forEach((a, i) => {
     const path = `artworks[${i}]`; check(text(a.name) && text(a.templateId) && text(a.styleId) && text(a.paletteId), path, '作品身份/设计包无效');
     if (!record(a.artboard)) issue(`${path}.artboard`, '缺少画板'); else { for (const key of ['width', 'height', 'physicalWidthMm', 'physicalHeightMm']) check(finite(a.artboard[key]) && (a.artboard[key] as number) > 0 && (a.artboard[key] as number) <= 100_000, `${path}.artboard.${key}`, '画板尺寸无效'); for (const key of ['bleedMm', 'safeMarginMm']) check(finite(a.artboard[key]) && (a.artboard[key] as number) >= 0, `${path}.artboard.${key}`, '出血/安全边距无效'); }
     if (!record(a.canonicalCamera)) issue(`${path}.canonicalCamera`, '缺少作品相机'); else { check(coordinate(a.canonicalCamera.center), `${path}.canonicalCamera.center`, '相机中心无效'); for (const k of ['zoom', 'bearing', 'pitch', 'exaggeration']) check(finite(a.canonicalCamera[k]), `${path}.canonicalCamera.${k}`, '相机参数无效'); check((a.canonicalCamera.zoom as number) >= 0 && (a.canonicalCamera.zoom as number) <= 24, `${path}.canonicalCamera.zoom`, '地图层级超范围'); check((a.canonicalCamera.pitch as number) >= 0 && (a.canonicalCamera.pitch as number) <= 85, `${path}.canonicalCamera.pitch`, '俯仰角超范围'); check(typeof a.canonicalCamera.terrain === 'boolean' && enumOf(a.canonicalCamera.projection, ['mercator', 'globe']) && enumOf(a.canonicalCamera.terrainProvider, ['mapterhorn', 'aws']), `${path}.canonicalCamera`, '地图模式无效'); }
+    if (record(a.canonicalCamera)) { const camera = a.canonicalCamera; check(bounded(camera.bearing, -360, 360) && bounded(camera.exaggeration, 0, 10), `${path}.canonicalCamera`, '方位或地形倍率超范围'); if (camera.roll !== undefined) check(bounded(camera.roll, -180, 180), `${path}.canonicalCamera.roll`, '相机滚转超范围'); if (camera.elevation !== undefined) check(bounded(camera.elevation, -12000, 100000), `${path}.canonicalCamera.elevation`, '相机目标高程超范围'); }
     if (!record(a.metadata) || !text(a.metadata.title) || !text(a.metadata.date) || !text(a.metadata.message)) issue(`${path}.metadata`, '作品文字无效');
     if (!record(a.layout) || !enumOf(a.layout.mode, ['auto', 'assisted', 'free']) || !Number.isSafeInteger(a.layout.layoutRevision)) issue(`${path}.layout`, '布局状态无效');
     if (!record(a.visibility) || Object.values(a.visibility).some(x => typeof x !== 'boolean')) issue(`${path}.visibility`, '显隐状态无效');
     const nodes = rows(a.nodes, `${path}.nodes`, 10000); const nodeIds = new Set(nodes.map(x => x.id));
     nodes.forEach((n, j) => { const p = `${path}.nodes[${j}]`; check(enumOf(n.kind, ['background', 'paper', 'map', 'photo', 'text', 'annotation', 'route', 'decoration', 'group', 'attribution']), `${p}.kind`, '未知场景节点'); check(text(n.role) && typeof n.visible === 'boolean' && finite(n.zIndex), p, '节点属性无效'); if (!record(n.transform) || !['x', 'y', 'width', 'height', 'rotation'].every(k => finite((n.transform as Record<string, unknown>)[k]))) issue(`${p}.transform`, '节点变换无效'); else check((n.transform.width as number) >= 0 && (n.transform.height as number) >= 0, `${p}.transform`, '节点尺寸不得为负'); if (!record(n.constraint) || !enumOf(n.constraint.position, ['auto', 'pinned']) || !enumOf(n.constraint.size, ['auto', 'fixed']) || !enumOf(n.constraint.crop, ['auto', 'fixed'])) issue(`${p}.constraint`, '独立锁定约束无效'); assetRef(n.assetId, `${p}.assetId`); if (record(n.photoEdit)) assetRef(n.photoEdit.derivedAssetId, `${p}.photoEdit.derivedAssetId`); if (n.parentId !== undefined) check(nodeIds.has(n.parentId) && n.parentId !== n.id, `${p}.parentId`, '父节点引用无效'); });
+    const parentLookup = new Map(nodes.map(node => [node.id, node]));
+    for (const node of nodes) {
+      crop(node.crop, `${path}.nodes.${String(node.id)}.crop`);
+      if (record(node.photoEdit)) { crop(node.photoEdit.crop, `${path}.nodes.${String(node.id)}.photoEdit.crop`); check(bounded(node.photoEdit.exposure, -2, 2) && bounded(node.photoEdit.contrast, 0, 2) && bounded(node.photoEdit.saturation, 0, 2) && bounded(node.photoEdit.intensity, 0, 1), `${path}.nodes.${String(node.id)}.photoEdit`, '照片处理参数超范围'); }
+      if (node.opacity !== undefined) check(bounded(node.opacity, 0, 1), `${path}.nodes.${String(node.id)}.opacity`, '透明度超范围');
+      if (node.fontSize !== undefined) check(bounded(node.fontSize, 1, 1000), `${path}.nodes.${String(node.id)}.fontSize`, '字号超范围');
+      if (record(node.transform)) check(Object.values(node.transform).every(value => bounded(value, -100000, 100000)), `${path}.nodes.${String(node.id)}.transform`, '节点变换超预算');
+      if (record(node.userOverrides) && node.userOverrides.fontSize !== undefined) check(bounded(Number(node.userOverrides.fontSize), 1, 1000), `${path}.nodes.${String(node.id)}.userOverrides.fontSize`, '人工字号超范围');
+      const ancestors = new Set<unknown>(); let cursor: Record<string, unknown> | undefined = node; while (cursor?.parentId) { if (ancestors.has(cursor.id)) { issue(`${path}.nodes.${String(node.id)}.parentId`, '场景父级引用不能成环'); break; } ancestors.add(cursor.id); cursor = parentLookup.get(cursor.parentId); }
+    }
     const bindings: Record<string, unknown>[] = Array.isArray(a.frozenPhotoBindings) ? a.frozenPhotoBindings.filter(record) : [];
     check(Array.isArray(a.frozenPhotoBindings), `${path}.frozenPhotoBindings`, '缺少冻结照片引用'); check(unique(bindings.map(b => b.photoId)), `${path}.frozenPhotoBindings`, '冻结照片身份不得重复');
     bindings.forEach((b, j) => { check(id(b.photoId), `${path}.frozenPhotoBindings[${j}]`, '照片身份无效'); for (const k of ['assetId', 'thumbnailAssetId', 'proxyAssetId', 'derivedAssetId']) assetRef(b[k], `${path}.frozenPhotoBindings[${j}].${k}`, k === 'assetId'); });
     assetRef(a.previewAssetId, `${path}.previewAssetId`); assetRef(a.mapSnapshotAssetId, `${path}.mapSnapshotAssetId`); refs(a.attributionIds, attributionIds, `${path}.attributionIds`);
+    if (a.mapSnapshot !== undefined) {
+      const snapshot = a.mapSnapshot;
+      if (!record(snapshot)) issue(`${path}.mapSnapshot`, '地图快照元数据无效');
+      else { check(snapshot.version === 1 && id(snapshot.inputHash) && typeof snapshot.snapshotBundleAllowed === 'boolean', `${path}.mapSnapshot`, '快照版本或能力无效'); for (const field of ['width', 'height', 'logicalWidth', 'logicalHeight']) check(bounded(snapshot[field], 1, 100000), `${path}.mapSnapshot.${field}`, '快照尺寸无效'); for (const field of ['attribution', 'printAttribution']) check(Array.isArray(snapshot[field]) && (snapshot[field] as unknown[]).every(text), `${path}.mapSnapshot.${field}`, '快照缺少来源署名'); check(Array.isArray(snapshot.annotations) && snapshot.annotations.every((value: unknown) => record(value) && id(value.visitId) && finite(value.x) && finite(value.y) && typeof value.visible === 'boolean' && (value.number === null || Number.isSafeInteger(value.number))), `${path}.mapSnapshot.annotations`, '快照注释无效'); check(record(snapshot.receipt), `${path}.mapSnapshot.receipt`, '快照缺少资源回执'); }
+    }
+    if (a.mapSource !== undefined) check(record(a.mapSource), `${path}.mapSource`, '地图 Provider 快照必须是声明式对象');
     if (!record(a.journey)) { issue(`${path}.journey`, '缺少冻结行程'); return; }
     const journey = a.journey; selectionRecipe(journey.recipe, `${path}.journey.recipe`);
     const frozen = rows(journey.resolvedVisits, `${path}.journey.resolvedVisits`); const frozenIds = new Set(frozen.map(x => x.id));

@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { zip, unzip, strToU8, strFromU8 } from 'fflate';
-import { assertValidProject, collectAssetReferences, migrateProject } from '../domain';
+import { assertValidProject, collectAssetReferences, migrateProject, newId } from '../domain';
 import type { ProjectDocument, AssetManifest, WorkspaceState, PhotoRecord, PlaceRecord, VisitRecord } from '../domain';
 
 export type AssetInput = Omit<AssetManifest, 'id' | 'hash' | 'byteLength' | 'mime'> & { mime?: string };
@@ -181,7 +181,7 @@ export function projectForArtwork(source: ProjectDocument, artworkId: string): P
 async function zipAsync(files: Record<string, Uint8Array>): Promise<Uint8Array> { return new Promise((resolve, reject) => zip(files, { level: 1 }, (error, bytes) => error ? reject(error) : resolve(bytes))); }
 async function unzipAsync(bytes: Uint8Array): Promise<Record<string, Uint8Array>> { return new Promise((resolve, reject) => unzip(bytes, (error, files) => error ? reject(error) : resolve(files))); }
 function jsonBytes(value: unknown): Uint8Array { return strToU8(JSON.stringify(value, null, 2)); }
-function validPath(path: string): boolean { return !!path && path.length <= 240 && !path.startsWith('/') && !path.includes('\\') && !path.includes('\0') && !path.split('/').some(part => !part || part === '.' || part === '..' || part.includes(':')) && !/%2e|%2f|%5c/i.test(path); }
+function validPath(path: string): boolean { return typeof path === 'string' && !!path && path.length <= 240 && !path.startsWith('/') && !path.includes('\\') && !path.includes('\0') && !path.split('/').some(part => !part || part === '.' || part === '..' || ['__proto__', 'constructor', 'prototype'].includes(part) || part.includes(':')) && !/%2e|%2f|%5c/i.test(path); }
 function safeName(id: string): string { return id.replace(/[^\w.-]/g, '_').slice(0, 100); }
 
 export async function exportProjectPackage(project: ProjectDocument, assets: AssetStore, options: { artworkId?: string; appVersion?: string; signal?: AbortSignal } = {}): Promise<Blob> {
@@ -215,6 +215,12 @@ export async function exportProjectPackage(project: ProjectDocument, assets: Ass
   }
   files['licenses/attributions.json'] = jsonBytes(snapshot.provenance); entryMeta['licenses/attributions.json'] = { mime: 'application/json' };
   files['licenses/README.txt'] = strToU8('Original photos belong to their owner. Included local map snapshots retain their recorded attribution. Online map tiles/DEM are not bundled; complete offline map editing is not implied. See the source/policy records in project.json.'); entryMeta['licenses/README.txt'] = { mime: 'text/plain' };
+  if (Object.keys(files).length >= PACKAGE_LIMITS.entries) throw new Error('项目文件数超过安全打包预算，请仅打包当前作品。');
+  let packageBytes = 0;
+  for (const [path, bytes] of Object.entries(files)) {
+    packageBytes += bytes.byteLength;
+    if (!validPath(path) || bytes.byteLength > PACKAGE_LIMITS.entryBytes || (path.endsWith('.json') && bytes.byteLength > PACKAGE_LIMITS.jsonBytes) || packageBytes > PACKAGE_LIMITS.uncompressedBytes) throw new Error('项目路径或体积超过安全打包预算，请仅打包当前作品。');
+  }
   const entries: PackageEntry[] = [];
   for (const [path, bytes] of Object.entries(files)) entries.push({ path, byteLength: bytes.length, hash: await hashBytes(bytes), ...entryMeta[path] });
   const manifest: PackageManifest = { format: 'travelstudio', containerVersion: 1, appVersion: options.appVersion ?? '1.0.0', projectId: snapshot.id, schemaVersion: snapshot.schemaVersion, mode: options.artworkId ? 'artwork' : 'full', createdAt: new Date().toISOString(), entries };
@@ -234,7 +240,7 @@ export function inspectPackageArchive(bytes: Uint8Array): Array<{ path: string; 
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65_557); i--) if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
   if (end < 0) throw new Error('不是完整的 travelstudio ZIP 项目。');
   const count = view.getUint16(end + 10, true), directorySize = view.getUint32(end + 12, true), offset = view.getUint32(end + 16, true);
-  if (!count || count > PACKAGE_LIMITS.entries || offset + directorySize > end || view.getUint16(end + 4, true) || view.getUint16(end + 6, true)) throw new Error('项目容器目录或体积不合法。');
+  if (!count || count > PACKAGE_LIMITS.entries || view.getUint16(end + 8, true) !== count || offset + directorySize > end || view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || end + 22 + view.getUint16(end + 20, true) !== bytes.length || (end >= 20 && view.getUint32(end - 20, true) === 0x07064b50)) throw new Error('项目容器目录或体积不合法。');
   const result: Array<{ path: string; size: number; compressedSize: number }> = [], paths = new Set<string>();
   let cursor = offset, total = 0;
   for (let i = 0; i < count; i++) {
@@ -244,6 +250,9 @@ export function inspectPackageArchive(bytes: Uint8Array): Array<{ path: string; 
     if (next > offset + directorySize || flags & 1 || ![0, 8].includes(method) || localOffset >= offset || size > PACKAGE_LIMITS.entryBytes || compressedSize > PACKAGE_LIMITS.entryBytes || size === 0xffffffff) throw new Error('不支持加密、ZIP64 或超大项目条目。');
     const path = strFromU8(bytes.subarray(cursor + 46, cursor + 46 + nameLength));
     if (!validPath(path) || paths.has(path)) throw new Error('项目包含重复或不安全路径。');
+    if (localOffset + 30 > offset || view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('项目本地文件头损坏。');
+    const localNameLength = view.getUint16(localOffset + 26, true), localExtraLength = view.getUint16(localOffset + 28, true);
+    if (localOffset + 30 + localNameLength + localExtraLength + compressedSize > offset || strFromU8(bytes.subarray(localOffset + 30, localOffset + 30 + localNameLength)) !== path) throw new Error('项目文件头与目录不一致。');
     if (path.endsWith('.json') && size > PACKAGE_LIMITS.jsonBytes) throw new Error('项目 JSON 超过 10 MiB。');
     total += size; if (total > PACKAGE_LIMITS.uncompressedBytes || (size > 10_000_000 && size > Math.max(compressedSize, 1) * 500)) throw new Error('项目解压预算超限。');
     paths.add(path); result.push({ path, size, compressedSize }); cursor = next;
@@ -264,7 +273,7 @@ export async function importProjectPackage(blob: Blob, options: { signal?: Abort
   for (const entry of directory) if (files[entry.path]?.length !== entry.size) throw new Error('解压后的文件尺寸不符合目录。');
   if (!files['manifest.json'] || !files['project.json']) throw new Error('项目缺少 manifest.json 或 project.json。');
   const manifest = JSON.parse(strFromU8(files['manifest.json'])) as PackageManifest;
-  if (manifest.format !== 'travelstudio' || manifest.containerVersion !== 1 || !Array.isArray(manifest.entries)) throw new ProjectRecoveryError('项目容器版本不兼容。原文件未修改，请使用相应版本恢复。', blob, []);
+  if (manifest.format !== 'travelstudio' || manifest.containerVersion !== 1 || !Array.isArray(manifest.entries) || manifest.entries.length >= PACKAGE_LIMITS.entries) throw new ProjectRecoveryError('项目容器版本不兼容。原文件未修改，请使用相应版本恢复。', blob, []);
   const expected = new Set<string>(['manifest.json']);
   for (const entry of manifest.entries) {
     if (!entry || !validPath(entry.path) || expected.has(entry.path) || !/^[a-f0-9]{64}$/.test(entry.hash) || !Number.isInteger(entry.byteLength) || entry.byteLength < 0) throw new Error('项目清单包含无效记录。');
@@ -291,13 +300,24 @@ export async function importProjectPackage(blob: Blob, options: { signal?: Abort
   for (const id of collectAssetReferences(project)) if (!available.has(id)) throw new Error(`项目存在悬空资源 ${id.slice(0, 12)}。`);
   return { project, assets, manifest, warnings: ['地图瓦片和地形数据不在项目包中；已保存地图快照可离线查看，重新取景需要相应数据服务。'] };
 }
-export async function persistImportedPackage(imported: ImportedProject, storage: StorageBundle): Promise<void> {
+export async function persistImportedPackage(imported: ImportedProject, storage: StorageBundle): Promise<ProjectDocument> {
   // Assets first, verify, then commit document: no document can point to unwritten blobs.
   for (const asset of imported.assets) {
     const saved = await storage.assets.putAsset(asset.blob, asset.manifest);
     if (saved.hash !== asset.manifest.hash) throw new Error('恢复资源完整性校验失败。');
   }
-  await storage.projects.saveProject(imported.project);
+  const restored = clone(imported.project), existing = await storage.projects.loadProject(restored.id);
+  // Opening a portable file is deliberate recovery, not an asynchronous stale document write.
+  // Keep both versions when the device already has different work with the same identity.
+  if (existing && JSON.stringify(existing) !== JSON.stringify(restored)) {
+    const now = new Date().toISOString();
+    restored.id = newId('project');
+    restored.name = `${restored.name} · 恢复副本`;
+    restored.createdAt = now;
+    restored.updatedAt = now;
+  }
+  await storage.projects.saveProject(restored);
+  return restored;
 }
 export function exportProjectJSON(project: ProjectDocument): Blob { assertValidProject(project); return new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }); }
 export async function importProjectJSON(blob: Blob): Promise<ProjectDocument> { if (blob.size > PACKAGE_LIMITS.jsonBytes) throw new Error('项目 JSON 太大。'); return migrateProject(JSON.parse(await blob.text())); }

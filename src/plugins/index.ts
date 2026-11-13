@@ -58,17 +58,27 @@ export function validateExtension(value: unknown): ExtensionManifest {
     if (!plain(colors) || ['paper', 'ink', 'water', 'land', 'road', 'accent'].some(key => typeof colors[key] !== 'string' || !/^#[\da-f]{6}$/i.test(colors[key] as string))) throw new Error('风格需声明 paper/ink/water/land/road/accent 六色。');
     if (findUrls(value.recipe).length) throw new Error('风格配方仅允许本地、纯数据资源。');
   } else if (value.kind === 'template') {
-    if (!Array.isArray(value.recipe.slots) || !value.recipe.slots.length || value.recipe.slots.length > 100) throw new Error('模板必须提供有限的 slots。');
-    for (const slot of value.recipe.slots) {
-      if (!plain(slot) || !['map', 'photo', 'text', 'decoration', 'attribution'].includes(String(slot.kind)) || ['x', 'y', 'width', 'height'].some(key => typeof slot[key] !== 'number' || !Number.isFinite(slot[key]) || (slot[key] as number) < 0 || (slot[key] as number) > 1)) throw new Error('模板槽位须为 0–1 的归一坐标。');
-      if ((slot.x as number) + (slot.width as number) > 1.001 || (slot.y as number) + (slot.height as number) > 1.001) throw new Error('模板槽位越出画板。');
+    const recipe = value.recipe;
+    if (recipe.layoutEngine !== undefined) {
+      const layoutIds = ['card-split', 'card-strip', 'torn-art', 'torn-map', 'ticket-photo', 'ticket-map', 'poster-full', 'poster-photos', 'film-vertical', 'film-horizontal', 'collage-scatter', 'collage-grid'];
+      const index = layoutIds.indexOf(String(recipe.layoutId));
+      if (recipe.layoutEngine !== 'builtin-v1' || index < 0 || recipe.family !== `T0${Math.floor(index / 2) + 1}` || recipe.variant !== index % 2 + 1 || !Array.isArray(recipe.ratio) || recipe.ratio.length !== 2 || recipe.ratio.some(n => typeof n !== 'number' || !Number.isFinite(n) || n <= 0 || n > 100)) throw new Error('内置模板快照的引擎、家族、变体或比例不兼容。');
+      const ratio = (recipe.ratio[0] as number) / (recipe.ratio[1] as number);
+      const shape = index < 2 || index >= 6 ? 'rectangle' : index < 4 ? 'torn' : 'ticket';
+      if (ratio < .25 || ratio > 4 || recipe.shape !== shape || (recipe.aspectRatio !== undefined && (typeof recipe.aspectRatio !== 'number' || !Number.isFinite(recipe.aspectRatio) || Math.abs(recipe.aspectRatio - ratio) > 1e-8))) throw new Error('内置模板快照的尺寸或纸张形状不合法。');
+    } else {
+      if (!Array.isArray(recipe.slots) || !recipe.slots.length || recipe.slots.length > 100) throw new Error('模板必须提供有限的 slots。');
+      for (const slot of recipe.slots) {
+        if (!plain(slot) || !['map', 'photo', 'text', 'decoration', 'attribution'].includes(String(slot.kind)) || ['x', 'y', 'width', 'height'].some(key => typeof slot[key] !== 'number' || !Number.isFinite(slot[key]) || (slot[key] as number) < 0 || (slot[key] as number) > 1)) throw new Error('模板槽位须为 0–1 的归一坐标。');
+        if ((slot.width as number) <= 0 || (slot.height as number) <= 0 || (slot.x as number) + (slot.width as number) > 1.00000001 || (slot.y as number) + (slot.height as number) > 1.00000001) throw new Error('模板槽位尺寸无效或越出画板。');
+      }
     }
     if (findUrls(value.recipe).length) throw new Error('模板仅允许本地、纯数据资源。');
   } else {
     if (!value.permissions.includes('network-map-data')) throw new Error('地图扩展需明确声明 network-map-data。');
     const recipe = value.recipe;
-    if (!publicHttps(recipe.tilejson) || !plain(recipe.schema) || ['water', 'transportation', 'building', 'place'].some(key => typeof (recipe.schema as Record<string, unknown>)[key] !== 'string')) throw new Error('地图扩展须声明 HTTPS TileJSON 及语义 schema 映射。');
-    if (typeof recipe.attribution !== 'string' || !recipe.attribution.trim() || !plain(recipe.policy) || !publicHttps(recipe.policy.policyURL)) throw new Error('地图扩展缺少来源署名或服务政策。');
+    if (!publicHttps(recipe.tileJSON) || !publicHttps(recipe.glyphs) || !plain(recipe.layers) || ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'building', 'place', 'boundary'].some(key => typeof (recipe.layers as Record<string, unknown>)[key] !== 'string') || !plain(recipe.fields) || ['name', 'englishName', 'class', 'height', 'minHeight', 'rank'].some(key => typeof (recipe.fields as Record<string, unknown>)[key] !== 'string')) throw new Error('地图扩展须声明 HTTPS TileJSON/glyphs 及完整语义 schema 映射。');
+    if (!plain(recipe.policy) || !publicHttps(recipe.policy.policyURL) || typeof recipe.policy.reviewedAt !== 'string' || typeof recipe.policy.exportAllowed !== 'boolean' || !Array.isArray(recipe.policy.requiredAttribution) || !recipe.policy.requiredAttribution.length || recipe.policy.requiredAttribution.some(line => typeof line !== 'string') || !Array.isArray(recipe.policy.printAttribution) || recipe.policy.printAttribution.some(line => typeof line !== 'string')) throw new Error('地图扩展缺少来源署名或服务政策。');
     for (const url of findUrls(recipe)) if (!publicHttps(url)) throw new Error('地图扩展只允许公开 HTTPS 地址。');
   }
   return structuredClone(value) as unknown as ExtensionManifest;

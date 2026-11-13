@@ -1,7 +1,7 @@
 import { Map as LibreMap, setWorkerUrl, setWorkerCount, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
 import workerURL from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type * as GeoJSON from 'geojson';
-import type { CameraSpec, Coordinate, JourneySnapshot } from '../domain';
+import type { CameraSpec, Coordinate, JourneySnapshot, ProjectedGeoAnchor, LocationPrecision } from '../domain';
 import { minimalBounds } from '../geo';
 import { PROVIDER_POLICIES, throwIfAborted } from '../providers';
 import { compileMapStyle, DEFAULT_MAP_RECIPE, OPENFREEMAP_SOURCE, photoGeoJSON, photoIdentity, routeGeoJSON, visitGeoJSON,
@@ -54,7 +54,7 @@ export interface MapController {
 export class MapRenderError extends Error {
   constructor(public code: string, message: string, public details: string[] = [], public retryable = true) { super(message); this.name = 'MapRenderError'; }
 }
-export interface ProjectedAnnotation { visitId: string; number: number | null; name: string; coordinate: Coordinate; x: number; y: number; visible: boolean; photoIds: string[] }
+export interface ProjectedAnnotation extends ProjectedGeoAnchor { coordinate: Coordinate; photoIds: string[]; precision: LocationPrecision }
 export interface MapRenderReceipt {
   renderer: string;
   provider: string;
@@ -290,7 +290,7 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
     const order=spec.journey?.order.orderedVisitIds ?? [];
     const annotations:ProjectedAnnotation[]=(spec.journey?.resolvedVisits ?? []).filter(v=>v.coordinate && v.status==='confirmed').map(v=>{
       const point=map!.project(surfaceCoordinate(map!,v.coordinate!));const index=order.indexOf(v.id);
-      return{visitId:v.id,number:index<0?null:index+1,name:v.name,coordinate:v.coordinate!,x:point.x,y:point.y,
+      return{visitId:v.id,placeId:v.placeId,precision:v.precision,number:index<0?null:index+1,name:v.name,coordinate:[...v.coordinate!] as Coordinate,x:point.x,y:point.y,
         visible:point.x>=0 && point.y>=0 && point.x<=width && point.y<=height,photoIds:[...v.photoIds]};
     });
     const printAttribution=[...new Set([...source.policy.printAttribution,...(terrainPolicy?.printAttribution??[])])];

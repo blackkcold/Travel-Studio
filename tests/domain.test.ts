@@ -23,6 +23,15 @@ describe('document transactions', () => {
     expect(store.document.assets).toHaveLength(0); expect(store.document.revision).toBe(0); expect(store.canUndo).toBe(false);
     expect(() => store.transact('throws', () => { throw new Error('cancelled'); })).toThrow('cancelled'); expect(store.document.revision).toBe(0);
   });
+  it('commits validated cache metadata without consuming undo or clearing redo', () => {
+    const store = new DocumentStore(createEmptyProject());
+    store.transact('rename', draft => { draft.name = 'next'; }); store.undo();
+    const revision = store.document.revision;
+    store.transact('cache', draft => { draft.updatedAt = '2026-11-13T00:00:00Z'; }, revision, { recordHistory: false });
+    expect(store.canUndo).toBe(false); expect(store.canRedo).toBe(true); expect(store.document.revision).toBe(revision + 1);
+    store.redo(); expect(store.document.name).toBe('next');
+    expect(() => store.transact('invalid cache', draft => { draft.assets.push({ id: 'bad', hash: 'bad', byteLength: -1, mime: 'image/png', kind: 'preview' }); }, store.document.revision, { recordHistory: false })).toThrow('校验失败');
+  });
   it('keeps history roots reachable for asset garbage collection', () => {
     const store = new DocumentStore(createEmptyProject()); store.transact('rename', draft => { draft.name = 'next'; });
     expect(store.retentionDocuments()).toHaveLength(2); expect(store.exportHistory().past[0].label).toBe('rename');

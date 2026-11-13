@@ -50,6 +50,21 @@ describe('portable project integrity and privacy', () => {
     expect(await fresh.projects.loadProject(project.id)).toEqual(project);
     expect(await fresh.assets.listAssets()).toHaveLength(2);
   });
+  it('opens an older backup as an independent recovery copy and retains the newer local project', async () => {
+    const { storage, project } = await fixture();
+    const imported = await importProjectPackage(await exportProjectPackage(project, storage.assets));
+    const current = structuredClone(project); current.revision = 3; current.name = 'Newer local work';
+    await storage.projects.saveProject(current);
+    const restored = await persistImportedPackage(imported, storage);
+    expect(restored.id).not.toBe(current.id);
+    expect(restored.name).toBe('Trip · 恢复副本');
+    expect(restored.artworks).toEqual(project.artworks);
+    expect((await storage.projects.loadProject(current.id))?.name).toBe('Newer local work');
+    expect(await storage.projects.loadProject(restored.id)).toEqual(restored);
+    expect(imported.project).toEqual(project);
+    const same = await persistImportedPackage({ ...imported, project: restored }, storage);
+    expect(same.id).toBe(restored.id);
+  });
   it('lean packages remove unrelated photos/locations and preserve old frozen originals', async () => {
     const { storage, project, own, other } = await fixture();
     project.library.photos[0].assetId = other.id; // Source changed since artwork creation.

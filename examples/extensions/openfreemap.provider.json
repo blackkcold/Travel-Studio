@@ -1,0 +1,77 @@
+{
+  "id": "example.openfreemap",
+  "version": "1.0.0",
+  "sdkRange": "1.x",
+  "kind": "map-provider",
+  "name": "OpenFreeMap · OpenMapTiles schema",
+  "capabilities": [
+    "vector",
+    "building-extrusion",
+    "attribution"
+  ],
+  "permissions": [
+    "network-map-data"
+  ],
+  "licenses": [
+    {
+      "name": "OpenStreetMap contributors",
+      "license": "ODbL-1.0",
+      "url": "https://www.openstreetmap.org/copyright",
+      "attribution": "© OpenStreetMap contributors"
+    },
+    {
+      "name": "OpenMapTiles",
+      "license": "CC-BY-4.0",
+      "url": "https://openmaptiles.org/",
+      "attribution": "© OpenMapTiles"
+    }
+  ],
+  "recipe": {
+    "tileJSON": "https://tiles.openfreemap.org/planet",
+    "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+    "layers": {
+      "landcover": "landcover",
+      "landuse": "landuse",
+      "water": "water",
+      "waterway": "waterway",
+      "transportation": "transportation",
+      "building": "building",
+      "place": "place",
+      "boundary": "boundary"
+    },
+    "fields": {
+      "name": "name",
+      "englishName": "name:latin",
+      "class": "class",
+      "height": "render_height",
+      "minHeight": "render_min_height",
+      "rank": "rank"
+    },
+    "policy": {
+      "id": "example.openfreemap",
+      "label": "OpenFreeMap sample adapter",
+      "policyURL": "https://openfreemap.org/tos/",
+      "reviewedAt": "2026-11-13",
+      "requiredAttribution": [
+        "OpenFreeMap",
+        "© OpenMapTiles",
+        "© OpenStreetMap contributors"
+      ],
+      "printAttribution": [
+        "OpenFreeMap · openfreemap.org",
+        "© OpenMapTiles · openmaptiles.org",
+        "© OpenStreetMap contributors · openstreetmap.org/copyright"
+      ],
+      "exportAllowed": true,
+      "cacheMode": "http",
+      "cacheTTL": 0,
+      "offlineAllowed": false,
+      "bundleAllowed": false,
+      "snapshotBundleAllowed": true,
+      "maxConcurrency": 4,
+      "minimumIntervalMs": 0,
+      "publicService": true,
+      "notes": "OpenMapTiles v3 semantic mapping. No bulk prefetch is enabled. Public service has no SLA."
+    }
+  }
+}

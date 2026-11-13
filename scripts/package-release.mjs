@@ -1,0 +1,12 @@
+import { cp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { resolve } from 'node:path';
+const root=resolve(import.meta.dirname,'..');
+const pkg=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
+const directory=resolve(root,`release/Travel-Studio-${pkg.version}`);
+await rm(directory,{recursive:true,force:true});await mkdir(directory,{recursive:true});
+for(const file of ['dist','server','docs','examples','LICENSE','.env.example'])await cp(resolve(root,file),resolve(directory,file),{recursive:true});
+await writeFile(resolve(directory,'start.sh'),'#!/usr/bin/env sh\nset -eu\ncd "$(dirname "$0")"\nnode --env-file-if-exists=.env server/serve.mjs\n',{mode:0o755});
+await writeFile(resolve(directory,'start.command'),'#!/usr/bin/env sh\nset -eu\ncd "$(dirname "$0")"\nnode --env-file-if-exists=.env server/serve.mjs\n',{mode:0o755});
+await writeFile(resolve(directory,'start.bat'),'@echo off\r\ncd /d "%~dp0"\r\nnode --env-file-if-exists=.env server/serve.mjs\r\npause\r\n');
+await writeFile(resolve(directory,'README.txt'),`Travel Studio ${pkg.version}\n\nRequirements: Node.js 24 LTS. No API key is required for maps, local photos, editing or export.\n\nWindows: double-click start.bat\nmacOS: double-click start.command (or run sh start.sh)\nLinux: sh start.sh\nThen open http://127.0.0.1:4173\n\nKeep this localhost origin and port stable to retain browser-local projects. Save .travelstudio files for independent backups.\nFor optional AI, copy .env.example to .env and configure server-only credentials.\nDocumentation: docs/DEPLOYMENT.md and docs/ACCEPTANCE.md.\n`);
+console.log(directory);

@@ -1,0 +1,11 @@
+{
+  "id": "example.sea-glass",
+  "version": "1.0.0",
+  "sdkRange": "1.x",
+  "kind": "style",
+  "name": "海玻璃 · Sea glass",
+  "capabilities": ["palette", "map-semantic-colors"],
+  "permissions": [],
+  "licenses": [{ "name": "Travel Studio original palette", "license": "MIT" }],
+  "recipe": { "palette": { "paper": "#f2f5ed", "ink": "#234842", "water": "#a7d2cc", "land": "#e3e9d8", "road": "#fff9e8", "accent": "#dc815d" } }
+}

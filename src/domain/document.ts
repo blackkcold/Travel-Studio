@@ -43,13 +43,16 @@ export class DocumentStore {
   get redoLabel(): string | undefined { return this.future.at(-1)?.label; }
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   private emit(): void { this.listeners.forEach(listener => listener()); }
-  transact(label: string, mutate: (draft: ProjectDocument) => void, expectedRevision = this.current.revision): ProjectDocument {
+  transact(label: string, mutate: (draft: ProjectDocument) => void, expectedRevision = this.current.revision, options: { recordHistory?: boolean } = {}): ProjectDocument {
     if (expectedRevision !== this.current.revision) throw new RevisionConflictError(expectedRevision, this.current.revision);
     const draft = clone(this.current); mutate(draft);
     if (draft.id !== this.current.id) throw new Error('事务不能替换项目身份。');
     draft.revision = this.current.revision + 1; draft.updatedAt = new Date().toISOString(); assertValidProject(draft);
-    this.past.push({ label, document: this.current }); if (this.past.length > this.historyLimit) this.past.shift();
-    this.future = []; this.current = deepFreeze(draft); this.emit(); return this.current;
+    if (options.recordHistory !== false) {
+      this.past.push({ label, document: this.current }); if (this.past.length > this.historyLimit) this.past.shift();
+      this.future = [];
+    }
+    this.current = deepFreeze(draft); this.emit(); return this.current;
   }
   private restore(entry: HistoryEntry): ProjectDocument { const restored = clone(entry.document); restored.revision = this.current.revision + 1; restored.updatedAt = new Date().toISOString(); this.current = deepFreeze(restored); this.emit(); return this.current; }
   undo(): ProjectDocument { const entry = this.past.pop(); if (!entry) return this.current; this.future.push({ label: entry.label, document: this.current }); return this.restore(entry); }
