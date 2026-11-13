@@ -38,6 +38,10 @@ export const OPENFREEMAP_SOURCE: MapSourceAdapter = {
   fields:{name:'name',englishName:'name:latin',class:'class',height:'render_height',minHeight:'render_min_height',rank:'rank'},
   policy:PROVIDER_POLICIES.openfreemap,
 };
+/** URL normalization must preserve MapLibre's literal tile-template placeholders. */
+export function resolveTileTemplate(template:string,tileJSONURL:string):string {
+  return new URL(template,tileJSONURL).href.replace(/%7B/gi,'{').replace(/%7D/gi,'}');
+}
 export function validateMapSourceAdapter(adapter: MapSourceAdapter): void {
   validateServiceURL(adapter.tileJSON); validateServiceURL(adapter.glyphs.replace('{fontstack}','font').replace('{range}','0-255'));
   if (!adapter.id || !adapter.version || !Object.values(adapter.layers).every(v => /^[a-zA-Z0-9_-]+$/.test(v)) || !Object.values(adapter.fields).every(v => /^[a-zA-Z0-9_:.-]+$/.test(v))) throw new Error('地图数据映射缺失或无效');

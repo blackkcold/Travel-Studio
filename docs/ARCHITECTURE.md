@@ -27,7 +27,7 @@ Cross-module imports use the listed public boundary. Within one module, private 
 
 `DocumentStore` is the only write entrance for the current `ProjectDocument`.
 
-- `transact(label, mutation, expectedRevision?)` clones the current revision, applies a draft mutation, validates it and publishes one immutable revision.
+- `transact(label, mutation, expectedRevision?, options?)` clones the current revision, applies a draft mutation, validates it and publishes one immutable revision. Explicit `{ recordHistory: false }` cache writes preserve user undo/redo while still advancing and validating the document revision.
 - Failed mutations, failed validation and stale expected revisions leave both the document and its history unchanged.
 - `undo()` and `redo()` restore content with **monotonically increasing** revisions. A new command after undo discards the abandoned redo branch.
 - `replace()` is an explicit project-open lifecycle event, not an asynchronous result callback.
@@ -86,6 +86,12 @@ The ten serializable scene kinds are `background`, `paper`, `map`, `photo`, `tex
 
 The shared renderer is used by Konva previews and the export compositor. A layout pass estimates text conservatively; actual loaded fonts must also be measured at export. Geometry and stable paper seeds remain in logical units.
 
+### Portable design recipes
+
+M06 installs pure-data style/template manifests with immutable `id@version` contents. Installed newer versions do not replace the exact version used by a saved work. `getDesignManifest()` creates a portable snapshot for both extensions and built-ins; `resolveStyle()` and `resolveTemplate()` read that artwork snapshot before consulting the installation registry. Built-in snapshots contain every palette color and drawing parameter, or the declared `builtin-v1` layout recipe. Saved explicit scene nodes remain the rendering geometry.
+
+Extension templates use normalized full-artboard slots with exactly one map and one protected attribution area. Slots must have positive finite dimensions, unique IDs and no content/attribution overlap. The solver honors those map/photo/text coordinates, retains unused photos, reports capacity conflicts, and fits additional visible metadata only in available space. It never silently discards metadata to make a recipe fit. The original six styles, two palettes each, and twelve template variants remain independently tested.
+
 ## Asynchrony, export and retention
 
 Every asynchronous job has `projectId`, `artworkId`, input hash, generation and relevant revision. A late result may remain as a derived resource, but cannot overwrite a newer node or selection. The scheduler is serial for expensive work by default, has cancellation/timeouts, and emits real stages rather than invented percentages.
@@ -114,13 +120,14 @@ Asset cleanup observes library, frozen artworks, hidden nodes, derivatives, hist
 | R12 version/capability contracts | Schema/manifest validation and preserved frozen data |
 | R13 visibility preserves facts | Hidden/group/restore and preserved crop tests |
 | R14 required attribution | Reserved layout region, collision gate, output attribution |
-| R15 stable responsibility counts | Module catalog and six-family/twelve-variant/six-style assertions |
+| R15 stable responsibility counts | AST-backed 44-UI / 10-scene inventory, module catalog and six-family/twelve-variant/six-style assertions |
 | R16 executable gates | `npm run check`, `npm test`, browser and real-provider smoke evidence |
 
 ## Verification commands
 
 ```sh
 npm run check
+node scripts/check-inventory.mjs
 npm test
 npm run test:e2e
 npm run test:providers

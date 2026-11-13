@@ -22,6 +22,8 @@ test('live Photon → vector map → real terrain → fixed-camera 4096 PNG',asy
     const receipt=JSON.parse(await page.locator('#receipt').innerText());
     expect(receipt.output.width).toBe(4096);expect(receipt.output.height).toBe(2867);
     expect(receipt.output.barriers.sourceErrors).toBe(0);expect(receipt.output.barriers.terrain).toBe(mode==='3d'?'ready':'not-requested');
+    expect(receipt.output.completedResources.basemapTiles).toBeGreaterThan(0);
+    if(mode==='3d')expect(receipt.output.completedResources.terrainTiles).toBeGreaterThan(0);
     expect(receipt.projectionMaxDeviationLogicalPixels).toBeLessThanOrEqual(1);
     expect(receipt.distinctSampleColors).toBeGreaterThan(24);
     expect(receipt.annotationOrder.map((p:{visitId:string})=>p.visitId)).toEqual(['visit-a1','visit-b','visit-a2']);

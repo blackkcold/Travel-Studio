@@ -1,7 +1,7 @@
 import { describe,it,expect } from 'vitest';
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { PbfWriter } from 'pbf';
-import { compileMapStyle,DEFAULT_MAP_RECIPE,photoGeoJSON,routeGeoJSON,visitGeoJSON,terrainSource,validateRenderDimensions,OPENFREEMAP_SOURCE,validateMapSourceAdapter,assertGlyphPbf } from '../src/map';
+import { compileMapStyle,DEFAULT_MAP_RECIPE,photoGeoJSON,routeGeoJSON,visitGeoJSON,terrainSource,validateRenderDimensions,OPENFREEMAP_SOURCE,validateMapSourceAdapter,assertGlyphPbf,resolveTileTemplate } from '../src/map';
 import { DEFAULT_CAMERA,emptyJourney } from '../src/domain';
 
 describe('real map contracts',()=>{
@@ -17,6 +17,10 @@ describe('real map contracts',()=>{
   it('sets the right DEM encoding and tile dimensions',()=>{
     expect(terrainSource('mapterhorn')).toMatchObject({encoding:'terrarium',tileSize:512});
     expect(terrainSource('aws')).toMatchObject({encoding:'terrarium',tileSize:256});
+  });
+  it('resolves TileJSON references without encoding tile-template tokens',()=>{
+    expect(resolveTileTemplate('https://tiles.example.test/{z}/{x}/{y}.pbf','https://tiles.example.test/planet')).toBe('https://tiles.example.test/{z}/{x}/{y}.pbf');
+    expect(resolveTileTemplate('../{z}/{x}/{y}{ratio}.webp','https://tiles.example.test/data/tilejson.json')).toBe('https://tiles.example.test/{z}/{x}/{y}{ratio}.webp');
   });
   it('does not duplicate route linework or draw visit numbers in export mode',()=>{
     const style=compileMapStyle({camera:DEFAULT_CAMERA,showStops:false});

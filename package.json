@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/serve.mjs",
-    "check": "tsc -b && node scripts/check-boundaries.mjs",
+    "check": "tsc -b && node scripts/check-boundaries.mjs && node scripts/check-inventory.mjs",
     "test:e2e": "playwright test",
     "test:providers": "node scripts/provider-smoke.mjs",
     "test:stress": "python3 scripts/generate-fixtures.py --stress && TRAVEL_STRESS=1 playwright test tests/photo.e2e.spec.ts"

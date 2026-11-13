@@ -6,10 +6,11 @@ import { minimalBounds } from '../geo';
 import { PROVIDER_POLICIES, throwIfAborted } from '../providers';
 import { compileMapStyle, DEFAULT_MAP_RECIPE, OPENFREEMAP_SOURCE, photoGeoJSON, photoIdentity, routeGeoJSON, visitGeoJSON,
   type AtlasPhotoPoint, type MapArtRecipe, type MapSourceAdapter } from './style';
-import { createMapRequestManager } from './network';
+import { createMapRequestManager,type MapResourceAudit } from './network';
 
 setWorkerUrl(workerURL);
 setWorkerCount(2);
+const resourceAudits=new WeakMap<LibreMap,MapResourceAudit>();
 
 export interface MapSelectEvent { kind: 'visit' | 'photo' | 'cluster' | 'coordinate'; coordinate: Coordinate; visitId?: string; photoIds?: string[] }
 export interface MapControllerOptions {
@@ -69,6 +70,7 @@ export interface MapRenderReceipt {
   pixelRatio: number;
   selectionRevision?: number;
   barriers: {tiles: true; glyphs: true; terrain: 'ready' | 'not-requested'; sourceErrors: 0};
+  completedResources:MapResourceAudit;
   attribution: string[];
   printAttribution: string[];
   snapshotBundleAllowed: boolean;
@@ -127,7 +129,7 @@ function createMap(container: HTMLElement, options: MapControllerOptions, forExp
       localIdeographFontFamily:false,
       transformRequest:requests.transformRequest,
     });
-    map.once('remove',()=>requests.dispose());return map;
+    resourceAudits.set(map,requests.completed);map.once('remove',()=>requests.dispose());return map;
   } catch(error) { requests.dispose();throw new MapRenderError('WEBGL_UNAVAILABLE','无法启动真实地图渲染，请使用支持 WebGL 2 的浏览器或继续编辑照片作品',[safeError(error)],false); }
 }
 
@@ -277,6 +279,8 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
     map.on('error',e=>errors.push(safeError(e.error)));
     await waitForResources(map,errors,signal,spec.timeoutMs ?? (ratio>1?120_000:45_000));
     throwIfAborted(signal,'map');
+    const completedResources=resourceAudits.get(map)!;
+    if(completedResources.basemapTiles<1)throw new MapRenderError('BASEMAP_EMPTY','此取景没有完成任何真实底图瓦片，已停止导出；请检查来源覆盖与瓦片模板');
     if(spec.camera.terrain && map.queryTerrainElevation(spec.camera.center)===null)throw new MapRenderError('DEM_UNAVAILABLE','当前区域的真实地形未加载，请重试或明确切换为 2D');
     spec.onStage?.('核验地图像素与固定视角');
     const glCanvas=map.getCanvas();
@@ -297,7 +301,7 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
     const receipt:MapRenderReceipt={renderer:'maplibre-gl@6.18.0',provider:source.id,providerVersion:source.version,
       terrainProvider:spec.camera.terrain?spec.camera.terrainProvider:undefined,terrainExaggeration:spec.camera.exaggeration,camera:cameraState(map,spec.camera),
       logicalWidth:width,logicalHeight:height,width:canvas.width,height:canvas.height,pixelRatio:map.getPixelRatio(),selectionRevision:spec.journey?.selectionRevision,
-      barriers:{tiles:true,glyphs:true,terrain:spec.camera.terrain?'ready':'not-requested',sourceErrors:0},
+      barriers:{tiles:true,glyphs:true,terrain:spec.camera.terrain?'ready':'not-requested',sourceErrors:0},completedResources:{...completedResources},
       attribution:printAttribution,printAttribution,snapshotBundleAllowed:source.policy.snapshotBundleAllowed && (terrainPolicy?.snapshotBundleAllowed??true),
       buildingHeights:'source-height-or-estimate',annotationStrategy:'screen-overlay-no-depth-test',durationMs:performance.now()-started,completedAt:new Date().toISOString()};
     return{canvas,annotations,receipt,dispose(){canvas.width=1;canvas.height=1;}};

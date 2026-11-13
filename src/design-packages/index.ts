@@ -109,6 +109,9 @@ function manifestData(value: unknown): DesignManifest {
   assertData(value);
   if (!plain(value) || typeof value.id !== 'string' || !identifiers.test(value.id) || typeof value.version !== 'string' || value.version.length > 80 || !versions.test(value.version) || value.version.split('-')[0].split('.').some(part => !Number.isSafeInteger(Number(part)))) throw new Error('设计扩展需要有效 id 和明确语义版本。');
   if (value.sdkRange !== '1.x' || !['style', 'template'].includes(String(value.kind))) throw new Error('设计扩展类型或 SDK 版本不兼容。');
+  if (builtinIds.has(value.id) && (value.kind === 'style') !== builtinStyles.has(value.id)) throw new Error('内置设计 id 不能改变类型。');
+  const prerelease = value.version.slice(value.version.indexOf('-') + 1);
+  if (value.version.includes('-') && prerelease.split('.').some(part => !part || (/^\d+$/.test(part) && part.length > 1 && part.startsWith('0')))) throw new Error('预发布版本标识不合法。');
   if (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100) throw new Error('设计扩展名称不合法。');
   if (!Array.isArray(value.capabilities) || value.capabilities.some(item => typeof item !== 'string' || item.length > 80) || !Array.isArray(value.permissions) || value.permissions.length) throw new Error('设计扩展能力声明不合法，且不能请求网络权限。');
   if (!Array.isArray(value.licenses) || !value.licenses.length || value.licenses.some(item => !plain(item) || typeof item.name !== 'string' || !item.name.trim() || typeof item.license !== 'string' || !item.license.trim() || (item.url !== undefined && (typeof item.url !== 'string' || !/^https:\/\//.test(item.url))))) throw new Error('设计扩展需要有效素材许可。');
@@ -146,6 +149,8 @@ function templateFromManifest(manifest: DesignManifest): TemplateDefinition {
     const layoutIds = ['card-split', 'card-strip', 'torn-art', 'torn-map', 'ticket-photo', 'ticket-map', 'poster-full', 'poster-photos', 'film-vertical', 'film-horizontal', 'collage-scatter', 'collage-grid'];
     if (recipe.layoutEngine !== 'builtin-v1' || typeof recipe.layoutId !== 'string' || !layoutIds.includes(recipe.layoutId) || !['T01', 'T02', 'T03', 'T04', 'T05', 'T06'].includes(String(recipe.family)) || !Array.isArray(recipe.ratio) || recipe.ratio.length !== 2 || recipe.ratio.some(n => typeof n !== 'number' || !Number.isFinite(n) || n <= 0 || n > 100)) throw new Error('内置布局快照的引擎、比例或家族不兼容。');
     const ratio: [number, number] = [recipe.ratio[0] as number, recipe.ratio[1] as number];
+    const position = layoutIds.indexOf(recipe.layoutId);
+    if (recipe.family !== `T${String(Math.floor(position / 2) + 1).padStart(2, '0')}` || recipe.variant !== position % 2 + 1) throw new Error('内置布局引擎与家族、变体不一致。');
     if (ratio[0] / ratio[1] < .25 || ratio[0] / ratio[1] > 4 || !['rectangle', 'torn', 'ticket'].includes(String(recipe.shape)) || ![1, 2].includes(Number(recipe.variant))) throw new Error('内置布局快照参数不合法。');
     return freeze({ id: manifest.id, version: manifest.version, name: manifest.name, english: text(recipe.english, manifest.name, 100), description: text(recipe.description, '冻结的内置布局配方'), family: String(recipe.family), ratio, shape: recipe.shape as TemplateDefinition['shape'], variant: Number(recipe.variant), layoutEngine: 'builtin-v1', layoutId: recipe.layoutId });
   }
@@ -182,9 +187,21 @@ function templateFromManifest(manifest: DesignManifest): TemplateDefinition {
   return freeze({ id: manifest.id, version: manifest.version, family: 'extension', name: manifest.name, english: text(recipe.english, manifest.name, 100), description: text(recipe.description, '声明式地图、照片、文字与署名布局'), ratio: [aspectRatio, 1], aspectRatio, shape: shape as TemplateDefinition['shape'], variant: 1, slots });
 }
 function newer(next: string, prior: string): boolean {
-  const [a, apre] = next.split('-', 2), [b, bpre] = prior.split('-', 2), an = a.split('.').map(Number), bn = b.split('.').map(Number);
+  const split = (value: string) => { const index = value.indexOf('-'); return index < 0 ? [value, ''] : [value.slice(0, index), value.slice(index + 1)]; };
+  const [a, apre] = split(next), [b, bpre] = split(prior), an = a.split('.').map(Number), bn = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) if (an[i] !== bn[i]) return an[i] > bn[i];
-  return !apre && !!bpre;
+  if (apre === bpre) return false;
+  if (!apre || !bpre) return !apre;
+  const av = apre.split('.'), bv = bpre.split('.');
+  for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+    if (av[i] === undefined || bv[i] === undefined) return av[i] !== undefined;
+    if (av[i] === bv[i]) continue;
+    const numericA = /^\d+$/.test(av[i]), numericB = /^\d+$/.test(bv[i]);
+    if (numericA && numericB) return BigInt(av[i]) > BigInt(bv[i]);
+    if (numericA !== numericB) return !numericA;
+    return av[i] > bv[i];
+  }
+  return false;
 }
 /** Installs pure data. A given id@version is immutable and every older version stays resolvable. */
 export function installDesignManifest(value: unknown): ArtStyle | TemplateDefinition {

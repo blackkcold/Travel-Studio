@@ -1,9 +1,10 @@
 import { addProtocol,type RequestParameters } from 'maplibre-gl';
 import { ProviderRequestScheduler,PROVIDER_POLICIES,validateServiceURL,parseRetryAfter,type ProviderPolicy } from '../providers';
-import type { MapSourceAdapter } from './style';
+import {resolveTileTemplate,type MapSourceAdapter} from './style';
 import { assertGlyphPbf } from './glyphs';
 
 type ResourceResult={data:ArrayBuffer|string|object;cacheControl?:string|null;expires?:string|null};
+export interface MapResourceAudit { basemapTiles:number; terrainTiles:number; glyphRanges:number; sourceDocuments:number }
 type SharedProvider={scheduler:ProviderRequestScheduler;refs:number;cache:Map<string,{value:ResourceResult;expires:number;bytes:number}>;bytes:number};
 const sharedProviders=new Map<string,SharedProvider>();
 const managers=new Map<string,MapRequestManager>();
@@ -11,6 +12,7 @@ let nextManager=0;let protocolInstalled=false;
 
 class MapRequestManager {
   readonly id=`map-${++nextManager}`;
+  readonly completed:MapResourceAudit={basemapTiles:0,terrainTiles:0,glyphRanges:0,sourceDocuments:0};
   private lifecycle=new AbortController();
   private providers=new Map<string,{policy:ProviderPolicy;shared:SharedProvider}>();
   constructor(private source:MapSourceAdapter,private onFailure:(error:Error)=>void) {managers.set(this.id,this);}
@@ -41,7 +43,7 @@ class MapRequestManager {
     const url=decodeURIComponent(encodedURL);validateServiceURL(url);
     const {policy,shared}=this.provider(url);
     const cacheKey=`${parameters.type}:${url}`;
-    return await shared.scheduler.run(async signal=>{
+    const result=await shared.scheduler.run(async signal=>{
       const cached=shared.cache.get(cacheKey);
       if(cached && cached.expires>Date.now())return structuredClone(cached.value);
       if(cached){shared.bytes-=cached.bytes;shared.cache.delete(cacheKey);}
@@ -58,7 +60,7 @@ class MapRequestManager {
       if(parameters.type==='json'){
         data=JSON.parse(new TextDecoder().decode(bytes)) as Record<string,unknown>;
         // Relative tile URLs must resolve against the real TileJSON endpoint.
-        const json=data as Record<string,unknown>;if(Array.isArray(json.tiles))json.tiles=json.tiles.map(tile=>typeof tile==='string'?new URL(tile,url).href:tile);
+        const json=data as Record<string,unknown>;if(Array.isArray(json.tiles))json.tiles=json.tiles.map(tile=>typeof tile==='string'?resolveTileTemplate(tile,url):tile);
       }else if(parameters.type==='string')data=new TextDecoder().decode(bytes);
       const result:ResourceResult={data,cacheControl:policy.cacheMode==='http'?response.headers.get('Cache-Control'):'no-store',expires:policy.cacheMode==='http'?response.headers.get('Expires'):null};
       if(policy.cacheMode==='memory' && policy.cacheTTL>0){
@@ -69,6 +71,10 @@ class MapRequestManager {
       }
       return result;
     },requestSignal);
+    if(resourceType==='Glyphs')this.completed.glyphRanges++;
+    else if(resourceType==='Tile'){if(policy===PROVIDER_POLICIES.mapterhorn||policy===PROVIDER_POLICIES.aws)this.completed.terrainTiles++;else this.completed.basemapTiles++;}
+    else if(resourceType==='Source')this.completed.sourceDocuments++;
+    return result;
     } catch(error) {
       // MapLibre deliberately falls back to local fonts after a glyph request
       // failure. Export must see the failed request before that fallback hides it.

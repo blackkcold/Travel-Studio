@@ -1,5 +1,6 @@
 import type { ArtworkDocument, SceneNode, Coordinate, ProjectedGeoAnchor } from '../domain';
 import { resolveStyle, resolveTemplate } from '../design-packages';
+import { solveAnnotationLayout, type AnnotationLayoutSnapshot } from './annotations';
 
 export type ProjectedAnnotation = ProjectedGeoAnchor;
 export interface CompositionResources {
@@ -8,6 +9,7 @@ export interface CompositionResources {
   mapViewport?: { width: number; height: number };
   annotations?: ProjectedAnnotation[];
   attributions: string[];
+  annotationLayout?: AnnotationLayoutSnapshot;
 }
 export interface RenderOptions { intent: 'presentation' | 'flat-print'; transparent: boolean; background?: string; margin?: number }
 export const EMPTY_RESOURCES: CompositionResources = { photos: new Map(), attributions: [] };
@@ -79,24 +81,20 @@ function drawTexture(ctx: CanvasRenderingContext2D, art: ArtworkDocument) {
   if(texture==='parchment') { const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.max(W,H)*.68); g.addColorStop(0,'#96734200');g.addColorStop(1,'#96734236');ctx.globalAlpha=1;ctx.fillStyle=g;ctx.fillRect(0,0,W,H); }
   ctx.restore();
 }
+function annotationLayout(ctx:CanvasRenderingContext2D,art:ArtworkDocument,resources:CompositionResources) {
+  const map=art.nodes.find(node=>node.kind==='map'&&isNodeVisible(node,art));
+  if(!map)return undefined;
+  ctx.save();ctx.font='12px Inter, "Noto Sans SC", sans-serif';
+  const result=solveAnnotationLayout({mapFrame:map.transform,viewport:resources.mapViewport,anchors:resources.annotations??[],photoNodes:art.nodes.filter(node=>node.kind==='photo'&&isNodeVisible(node,art)),obstacles:art.nodes.filter(node=>['text','attribution'].includes(node.kind)&&isNodeVisible(node,art)).map(node=>({id:node.id,transform:node.transform})),showNumbers:art.visibility.numbers,showNames:art.visibility.names,measureText:text=>ctx.measureText(text).width});
+  ctx.restore();return result;
+}
 function drawAnnotations(ctx: CanvasRenderingContext2D, art: ArtworkDocument, resources: CompositionResources, width: number,height: number) {
-  const { palette }=resolveStyle(art), used: Array<{x:number;y:number;w:number;h:number}>=[];
+  const {palette}=resolveStyle(art),layout=resources.annotationLayout??annotationLayout(ctx,art,resources);if(!layout)return;
   ctx.save();ctx.beginPath();ctx.rect(0,0,width,height);ctx.clip();
-  for(const raw of resources.annotations??[]) {
-    const a={...raw,x:raw.x*width/(resources.mapViewport?.width??width),y:raw.y*height/(resources.mapViewport?.height??height)};
-    if(!a.visible||a.x<-10||a.y<-10||a.x>width+10||a.y>height+10)continue;
-    let x=a.x,y=a.y;
-    // Repeat visits have separate identities. Offset badges, never geographic anchors.
-    while(used.some(u=>Math.hypot(x-u.x,y-u.y)<23)) {x+=15;y-=17;}
-    if(Math.abs(x-a.x)+Math.abs(y-a.y)>1){ctx.strokeStyle=palette.accent;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(x,y);ctx.stroke();}
-    if(art.visibility.numbers){ctx.fillStyle=palette.accent;ctx.strokeStyle=palette.paper;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(x,y,12,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.font='600 12px Inter, "Noto Sans SC", sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(a.number === null ? '?' : String(a.number),x,y+.5);}
-    used.push({x,y,w:24,h:24});
-    if(art.visibility.names&&a.name){ ctx.font='12px Inter, "Noto Sans SC", sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';const text=a.name.length>16?a.name.slice(0,16)+'…':a.name; const tw=ctx.measureText(text).width+12;
-      let lx=Math.min(width-tw-5,Math.max(5,x+16)),ly=Math.min(height-12,Math.max(12,y));
-      if(used.some(u=>u.w>24 && Math.abs(ly-u.y)<22 && lx<u.x+u.w && lx+tw>u.x))ly+=24;
-      if(ly<height-10){ctx.fillStyle=palette.paper+'ed';ctx.beginPath();ctx.roundRect(lx,ly-10,tw,20,4);ctx.fill();ctx.fillStyle=palette.ink;ctx.fillText(text,lx+6,ly);used.push({x:lx,y:ly,w:tw,h:20});}
-    }
-  }
+  ctx.strokeStyle=palette.accent+'99';ctx.lineWidth=.9;
+  for(const leader of layout.leaders){ctx.beginPath();for(const[a,b]of leader.segments){ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);}ctx.stroke();}
+  for(const badge of layout.badges){const{x,y}=badge.center;ctx.fillStyle=palette.accent;ctx.strokeStyle=palette.paper;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(x,y,12,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.font='600 12px Inter, "Noto Sans SC", sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(badge.text,x,y+.5);}
+  for(const name of layout.names){const{x,y,width:w,height:h}=name.bounds;ctx.fillStyle=palette.paper+'ed';ctx.beginPath();ctx.roundRect(x,y,w,h,4);ctx.fill();ctx.font='12px Inter, "Noto Sans SC", sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle=palette.ink;ctx.fillText(name.text,x+6,y+h/2,w-12);}
   ctx.restore();
 }
 export function isNodeVisible(node: SceneNode, art: ArtworkDocument, seen = new Set<string>()): boolean {
@@ -128,6 +126,8 @@ export function drawNode(ctx: CanvasRenderingContext2D, node: SceneNode, art: Ar
     const img=resources.photos.get(node.id)??resources.photos.get(node.assetId??'');
     const frame=Math.max(5,Math.min(w,h)*.035);ctx.fillStyle='#fffdf5';ctx.shadowColor='#25271c30';ctx.shadowBlur=7;ctx.shadowOffsetY=3;ctx.fillRect(-frame,-frame,w+2*frame,h+2*frame+frame*.5);ctx.shadowColor='transparent';
     if(img)drawCover(ctx,img,w,h,node); else {ctx.fillStyle='#e1ded4';ctx.fillRect(0,0,w,h);ctx.fillStyle='#6e7168';ctx.font='13px sans-serif';ctx.fillText('照片准备中',8,24);}
+    const binding=resources.annotationLayout?.photoBindings.find(item=>item.nodeId===node.id);
+    if(art.visibility.map&&art.visibility.numbers&&binding?.visitId){ctx.fillStyle=p.paper+'ee';ctx.beginPath();ctx.roundRect(5,5,23,21,4);ctx.fill();ctx.fillStyle=p.ink;ctx.font='600 11px Inter, "Noto Sans SC", sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(binding.number===null?'?':String(binding.number),16.5,15.5);}
   } else if(node.kind==='text') {
     let text=node.role==='date'?dateLabel(node.text??''):node.role==='coordinates'?coordinateLabel(art.journey.resolvedVisits.find(v=>v.coordinate)?.coordinate):node.text??'';
     ctx.fillStyle=node.color??p.ink;const fs=node.fontSize??16;ctx.font=`${node.role==='title'?500:400} ${fs}px ${node.fontFamily??style.font}`;ctx.textBaseline='top';ctx.textAlign='left';
@@ -146,6 +146,7 @@ export function drawNode(ctx: CanvasRenderingContext2D, node: SceneNode, art: Ar
 }
 export function renderArtwork(ctx: CanvasRenderingContext2D, art: ArtworkDocument, resources: CompositionResources, options: RenderOptions) {
   const {width:W,height:H}=art.artboard, margin=options.margin??(options.intent==='presentation'?36:0), p=resolveStyle(art).palette;
+  resources={...resources,annotationLayout:annotationLayout(ctx,art,resources)};
   ctx.save();
   if(!options.transparent) {ctx.fillStyle=options.background??(options.intent==='presentation'?'#e9e7e0':p.paper);ctx.fillRect(0,0,W+margin*2,H+margin*2);}
   ctx.translate(margin,margin);
