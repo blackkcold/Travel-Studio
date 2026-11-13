@@ -4,11 +4,13 @@
 
 ## 当前记录
 
-记录日期：2026-11-13。提交 `0a1eb17df00bde659574edb85400a7f344f11fd1` 的 core、map、photo、visual 分组已通过；app 分组仍在执行；visits 分组失败，已定位 Select 标签缺陷并修复待新提交复核。本文件按实测结果更新，当前不声明完整 Quality 或 A–Q 全部通过。
+记录日期：2026-11-13。当前提交 `a9d8c5b40deffc0861371130f3569c247059b1e6` 的 [Quality run 43397468348](https://github.com/blackkcold/Travel-Studio/actions/runs/43397468348) 正在验证修复。上一提交 `0a1eb17df00bde659574edb85400a7f344f11fd1` 的 core、map、photo、visual 分组通过，visits 失败；app 尚未完成便被新提交取消，整个旧 workflow 为 cancelled。本文件按实测结果更新，当前不声明完整 Quality 或 A–Q 全部通过。
 
 | 证据 | 已观察结果 | 适用范围 |
 | --- | --- | --- |
-| [完整应用矩阵 run 43395374432](https://github.com/blackkcold/Travel-Studio/actions/runs/43395374432)，提交 `0a1eb17df00bde659574edb85400a7f344f11fd1` | core（类型/模块契约、154个单元测试、构建、真实 Provider）、map（2/2 首次通过）、photo（1通过、48MP opt-in 1跳过）分组成功；visual（36组合/12结构）分组成功；visits 分组失败待新提交复核，app 尚待结论 | 当前提交已验证范围；不能把尚未完成的分组预填通过 |
+| [修复验证矩阵 run 43397468348](https://github.com/blackkcold/Travel-Studio/actions/runs/43397468348)，提交 `a9d8c5b40deffc0861371130f3569c247059b1e6` | core成功；photo两用例首次通过，包含新启用的合成48MP导入；visits因测试正则同时匹配时区文本失败，已修待重跑；app/map/visual尚待结论 | 当前提交局部证据，整个workflow不能标通过 |
+| [合成48MP与照片附件](https://github.com/blackkcold/Travel-Studio/actions/runs/43397468348/artifacts/14024065422) | ZIP SHA-256 `3ce33f516f5f8da518c6f8563750d4aa0de5e96b7d4a3f8c87638f6831714101`；8000×6000合成JPEG原图hash不变，256×192缩略图、1600×1200代理图 | 一张合成48MP文件的预算路径通过；未采样内存，不代表真实相机文件、批量50张或实体设备压力验收 |
+| [完整应用矩阵 run 43395374432](https://github.com/blackkcold/Travel-Studio/actions/runs/43395374432)，提交 `0a1eb17df00bde659574edb85400a7f344f11fd1` | core（类型/模块契约、154个单元测试、构建、真实 Provider）、map（2/2 首次通过）、photo（1通过、48MP opt-in 1跳过）分组成功；visual（36组合/12结构）分组成功；visits 分组失败待新提交复核，app 未完成被取消；整个 workflow 为 cancelled | 当前提交已验证范围；不能把尚未完成的分组预填通过 |
 | [当前地图附件](https://github.com/blackkcold/Travel-Studio/actions/runs/43395374432/artifacts/14022647329) | ZIP SHA-256 `2f8c20e00426595d0489b711d966bcfd7ec7dd8ca2ef4cfe5e948381d712156e`；正常和缺字形故障两用例首次通过，无重试 | 实际2D/3D 4096文件、资源完成数、署名/来源许可、投影回执；图像哈希与已人工审图文件一致 |
 | [当前视觉附件](https://github.com/blackkcold/Travel-Studio/actions/runs/43395374432/artifacts/14023570603) | ZIP SHA-256 `87f1fd997e9f7159d3994ec3ec42e846f06ba5c59c4cd49c535acbde4caf573a`；48张实际画布，36张风格组合 hash 与回执逐一相符 | 程序门禁首次通过；已人工检视，发现撕纸多照片艺术参数与旅签印章叠图问题，须修复后重跑，不能直接写视觉无缺陷 |
 | [当前照片附件](https://github.com/blackkcold/Travel-Studio/actions/runs/43395374432/artifacts/14022133166) | ZIP SHA-256 `7116926bee555d40d41b73f57af4b24fd5dae13f5674776058a496f806d22b9b`；实际检视六配方截图与编码回执 | 合成 EXIF/GPS/方向文件、原字节保留、重复导入、18次 PNG/JPEG/WebP 编码与隐私核验；不代表真实相机画质或48MP压力验收 |
@@ -18,6 +20,7 @@
 | [更新地图证据附件](https://github.com/blackkcold/Travel-Studio/actions/runs/43393426134/artifacts/14022281289) | ZIP SHA-256 `10e2ad60180e0d2dc4f18d320f69c796945c8582a02c18aa1deaab646e13c496` | 正常主门禁首轮通过；故障用例曾因测试夹具状态被迟到事件覆盖而重试，产品在首轮已拒绝导出；最终提交需复核修正后的独立故障状态 |
 | [真实地图 run 43389637340](https://github.com/blackkcold/Travel-Studio/actions/runs/43389637340)，提交 `0ccbb2c922953d6f346240e09ba41381c52bbee0` | 正常服务下真实搜索、2D、DEM 3D、独立 4096 PNG 的测试用例通过；整个 workflow 因缺字形故障用例失败 | 可引用该用例的真实文件与回执；不能将该 workflow 称为全绿 |
 | [地图证据附件](https://github.com/blackkcold/Travel-Studio/actions/runs/43389637340/artifacts/14020770952) | ZIP SHA-256 `1ba541a45716195702b7c28b6e5ed7135a7485bee1349d678a17d1e07c567628` | 包含 2D/3D 实际图像、投影与资源回执 |
+| 生产归档解压启动 smoke（2026-11-13 08:59:31Z，Linux / Node24.22.1） | 实际ZIP与tar.gz分别857文件，启动脚本0755；在含空格路径、包外工作目录启动成功，入口及JS/CSS/worker/CJK字体HTTP200，Host/Origin/路径/符号链接边界、AI默认关闭与SIGTERM无孤儿进程检查通过 | 回执为 `verification-results/release-smoke.json`；仅为该次本机归档与Linux运行证据，不是最终Release附件hash，也不代表Windows cmd.exe或macOS Finder验证 |
 | 本机针对性存储/运行时契约 | `tests/storage.test.ts` 与 `tests/runtime.test.ts` 共 17 个测试通过；覆盖导入恢复副本、损坏本机文档的历史恢复/保留、内置扩展清单校验 | 不代表浏览器操作或外部服务通过 |
 
 ### 已获得的地图回执
@@ -34,7 +37,9 @@
 
 `0a1eb17` 的 photo 分组在 Chromium 中实际导入4次文件，得到3张独立照片；所有原图 SHA-256 与输入一致。GPS 为 `[135.7844, 34.9943]`；带偏移时间原值为 `2026:07:21 09:00:00`、子秒125、偏移 `+09:00`，UTC 为 `2026-07-21T00:00:00.125Z`。Orientation6 的解码结果为600×800，无时区文件没有被补写 UTC，无元数据图片没有虚构坐标或时间。
 
-六配方分别真实编码PNG/JPEG/WebP，共18份800×600输出；全部不含源 GPS、拍摄时间或 EXIF 容器。已打开附件中的六配方截图检查，画面方向正确、六种处理有可见区别。截图 SHA-256 为 `036a5b8a638e83b4bba2efb7112e44a21573939fd2930412411fe14fa2cd5847`。该用例2.473秒完成，包含小尺寸合成输入的导入和编码；这不是方案的单项预览延时基准。合成48MP用例因未启用 `TRAVEL_STRESS=1` 跳过，未计为通过。
+六配方分别真实编码PNG/JPEG/WebP，共18份800×600输出；全部经元数据解析确认不含源 GPS、拍摄时间；WebP另以RIFF分块确认没有EXIF/XMP容器。已打开附件中的六配方截图检查，画面方向正确、六种处理有可见区别。截图 SHA-256 为 `036a5b8a638e83b4bba2efb7112e44a21573939fd2930412411fe14fa2cd5847`。该用例2.473秒完成，包含小尺寸合成输入的导入和编码；这不是方案的单项预览延时基准。合成48MP用例因未启用 `TRAVEL_STRESS=1` 跳过，未计为通过。
+
+后续 `a9d8c5b` 已启用 `TRAVEL_STRESS=1`，photo分组两用例首次通过。合成8000×6000 JPEG为3,200,286字节，原图hash `11509489557c873db254e09a4f5d10675334723d0678dcc95aae53d899135813` 保持一致；1600×1200代理图180,828字节。该次 `importPhoto` 回执约491.8ms，整个48MP测试1539ms。未采样内存或持续批量吞吐；它仅证明这张合成大图的导入与代理路径可运行。小图18个编码hash与此前已审阅输出完全相同。
 
 ### 当前视觉矩阵与缺陷
 
@@ -57,7 +62,7 @@
 | **G 浏览与作品隔离** | 工作状态切换、冻结 journey/camera、项目恢复 | 单元契约保留冻结资料。浏览器测试新增北京资料、无 GPS 照片、修改 A 原始地点和日期后验证旧作不变，并对完整/精简包独立恢复，待 CI。主动刷新会话、撤销以及重启后的两个相机状态须保留最终实测记录。 |
 | **H 2D/3D 照片注释** | 地图投影、屏幕注释布局和引线；`tests/annotations.test.ts`、`tests/map.e2e.spec.ts` | 投影4K、同坐标到访与标注顺序部分已有地图回执；碰撞/视口策略有单元覆盖。注释明确采用屏幕叠加、不做完整建筑深度遮挡。密集真实照片卡与手势录屏待目标设备验证。 |
 | **I 撕纸与旅签导出** | 参数纸边、票口、孔眼与绳结；12结构、导出对话框 | 物理像素、PPI 与出血算式有契约。36组合+6延展结构+6隐藏地图截图已真实生成并人工检视；见下述已发现问题。150×100 mm/300 PPI/3 mm 出血 PNG、密度块和不透明边缘待 app 分组。中文长标题、透明边缘/阴影和印刷实物仍需人工审阅；无 CMYK、PDF/X 或打样声明。 |
-| **J 元数据与隐私** | EXIF 原始值、偏移/未知时间、显式旅行日期、无默认天气 | 2026-07-21 为星期二、无时区/仅日期/未知时间、无虚构 UTC 等有单元契约；当前 photo 浏览器分组已验证六配方×PNG/JPEG/WebP共18次实际编码不含源 GPS、拍摄时间或 EXIF 容器。未提供功能码能力，因此不存在已验证的公开扫码落地页。 |
+| **J 元数据与隐私** | EXIF 原始值、偏移/未知时间、显式旅行日期、无默认天气 | 2026-07-21 为星期二、无时区/仅日期/未知时间、无虚构 UTC 等有单元契约；当前 photo 浏览器分组已验证六配方×PNG/JPEG/WebP共18次实际编码不含源 GPS、拍摄时间；WebP另以RIFF分块确认没有EXIF/XMP容器。未提供功能码能力，因此不存在已验证的公开扫码落地页。 |
 | **K 多点与重访** | `VisitRecord`、`freezeJourney`、访问顺序编辑器 | 三次到访/两个地点、相同 A 坐标保留、一个顺序驱动路线有单元测试。实际 GPS A 09:00→B 11:00→A 18:00、手动重排、原始照片逐字节保留待 CI。 |
 | **L 自动组合** | 固定日期/半径谓词、AND/OR、手动加入/排除、候选过滤 | 固定参考无链式扩张、例外保留与数量口径由 `tests/journey.test.ts` 覆盖。界面提供规则与部分勾选；方案规定的 900m/900m/1800m 完整 UI 操作、保存恢复与导出录像尚待补充，不能标为全场景通过。 |
 | **M 时间证据** | `TimeEvidence`、时间依据选择、待排序区、手工入序 | 有偏移、无时区、仅日期、缺时间、同值稳定排序与不补午夜均有契约；合成 EXIF 浏览器导入已通过：已知 +09:00 偏移保留原墙上时间与显式 UTC，无时区仅标 local，无元数据保持 unknown；主 UI 显式时间依据与无 GPS/未知时间照片作品待 app 分组。跨系统时区和真实相机文件需进一步检查。 |

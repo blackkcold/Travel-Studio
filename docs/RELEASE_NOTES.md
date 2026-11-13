@@ -26,10 +26,10 @@ AI 是可选功能，需要自行配置服务端凭据，并分别确认艺术�
 
 项目保存在当前浏览器与来源中。清理浏览器数据前请下载 `.travelstudio` 备份；公开分享建议使用导出图片，项目包包含原图和位置资料。
 
-正式发布流程要求当前提交的类型、模块契约、单元测试、构建、真实服务和 Chromium 浏览器验收全部通过。逐项证据、实际文件与限制见 [验收记录](https://github.com/blackkcold/Travel-Studio/blob/main/docs/ACCEPTANCE.md)。GitHub Linux Chromium 与触屏模拟结果不等同于 Windows、macOS Safari 或手机真机认证；固定设备帧率、长时间编辑、大资料库和专业印刷打样目标仍需独立验证。
+正式发布流程要求当前提交的类型、模块契约、单元测试、构建、真实服务和 Chromium 浏览器验收全部通过。逐项证据、实际文件与限制见 [验收记录](https://github.com/blackkcold/Travel-Studio/blob/v1.0.0/docs/ACCEPTANCE.md)。GitHub Linux Chromium 与触屏模拟结果不等同于 Windows、macOS Safari 或手机真机认证；固定设备帧率、长时间编辑、大资料库和专业印刷打样目标仍需独立验证。
 
 ## 文档
 
-[使用说明](https://github.com/blackkcold/Travel-Studio/blob/main/docs/USER_GUIDE.md) · [部署与 AI 配置](https://github.com/blackkcold/Travel-Studio/blob/main/docs/DEPLOYMENT.md) · [项目格式](https://github.com/blackkcold/Travel-Studio/blob/main/docs/FORMAT.md) · [扩展说明](https://github.com/blackkcold/Travel-Studio/blob/main/docs/EXTENSIONS.md) · [服务来源](https://github.com/blackkcold/Travel-Studio/blob/main/docs/PROVIDERS.md)
+[使用说明](https://github.com/blackkcold/Travel-Studio/blob/v1.0.0/docs/USER_GUIDE.md) · [部署与 AI 配置](https://github.com/blackkcold/Travel-Studio/blob/v1.0.0/docs/DEPLOYMENT.md) · [项目格式](https://github.com/blackkcold/Travel-Studio/blob/v1.0.0/docs/FORMAT.md) · [扩展说明](https://github.com/blackkcold/Travel-Studio/blob/v1.0.0/docs/EXTENSIONS.md) · [服务来源](https://github.com/blackkcold/Travel-Studio/blob/v1.0.0/docs/PROVIDERS.md)
 
 项目采用 MIT License；第三方代码、字体和地图数据保留各自许可及署名。

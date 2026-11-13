@@ -9,7 +9,7 @@ const RESULT_LIMIT = 70_000_000;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.travelstudio': 'application/zip' };
 
 class HttpError extends Error {
-  constructor(status, code, message) { super(message); this.status = status; this.code = code; }
+  constructor(status, code, message, retryAfter) { super(message); this.status = status; this.code = code; this.retryAfter = retryAfter; }
 }
 export function configFromEnvironment(environment = process.env) {
   return {
@@ -86,7 +86,11 @@ async function upstreamJSON(config, path, request, fetchImpl, signal) {
   try { response = await fetchImpl(endpoint.href, { ...request, signal, redirect: 'error', headers: { ...request.headers, Authorization: `Bearer ${config.key}` } }); }
   catch { throw new HttpError(502, 'UPSTREAM_UNAVAILABLE', 'AI 服务连接失败或被取消；本地处理不受影响。'); }
   if (!response.ok) {
-    if (response.status === 429) throw new HttpError(429, 'UPSTREAM_RATE_LIMIT', 'AI 服务限流，请稍后重试。');
+    if (response.status === 429) {
+      const value = response.headers.get('Retry-After')?.trim();
+      const retryAfter = value && value.length <= 128 && (/^\d+$/.test(value) || (/^[\x20-\x7e]+$/.test(value) && Number.isFinite(Date.parse(value)))) ? value : undefined;
+      throw new HttpError(429, 'UPSTREAM_RATE_LIMIT', 'AI 服务限流，请稍后重试。', retryAfter);
+    }
     throw new HttpError(502, 'UPSTREAM_REJECTED', `AI 服务未接受请求（${response.status}）。请核对服务端配置。`);
   }
   const bytes = await readLimited(response, RESULT_LIMIT);
@@ -166,7 +170,10 @@ export function createTravelServer(options = {}) {
       res.writeHead(200, { 'Content-Type': MIME[extension] ?? 'application/octet-stream', 'Content-Length': bytes.length, 'Cache-Control': extension === '.html' ? 'no-cache' : /[-.][A-Za-z0-9_-]{8,}\./.test(basename(actual)) ? 'public, max-age=31536000, immutable' : 'no-cache' });
       res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if (!res.headersSent && !res.destroyed) json(res, error instanceof HttpError ? error.status : 500, { error: { code: error instanceof HttpError ? error.code : 'INTERNAL_ERROR', message: error instanceof HttpError ? error.message : '本地服务未能完成请求。配置和照片内容未写入日志。' } });
+      if (!res.headersSent && !res.destroyed) {
+        if (error instanceof HttpError && error.retryAfter) res.setHeader('Retry-After', error.retryAfter);
+        json(res, error instanceof HttpError ? error.status : 500, { error: { code: error instanceof HttpError ? error.code : 'INTERNAL_ERROR', message: error instanceof HttpError ? error.message : '本地服务未能完成请求。配置和照片内容未写入日志。' } });
+      }
       else if (!res.writableEnded) res.end();
     }
   });
