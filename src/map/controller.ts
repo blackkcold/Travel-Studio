@@ -3,9 +3,10 @@ import workerURL from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type * as GeoJSON from 'geojson';
 import type { CameraSpec, Coordinate, JourneySnapshot } from '../domain';
 import { minimalBounds } from '../geo';
-import { attributionForMap, PROVIDER_POLICIES, throwIfAborted } from '../providers';
+import { PROVIDER_POLICIES, throwIfAborted } from '../providers';
 import { compileMapStyle, DEFAULT_MAP_RECIPE, OPENFREEMAP_SOURCE, photoGeoJSON, photoIdentity, routeGeoJSON, visitGeoJSON,
   type AtlasPhotoPoint, type MapArtRecipe, type MapSourceAdapter } from './style';
+import { createMapRequestManager } from './network';
 
 setWorkerUrl(workerURL);
 setWorkerCount(2);
@@ -69,6 +70,8 @@ export interface MapRenderReceipt {
   selectionRevision?: number;
   barriers: {tiles: true; glyphs: true; terrain: 'ready' | 'not-requested'; sourceErrors: 0};
   attribution: string[];
+  printAttribution: string[];
+  snapshotBundleAllowed: boolean;
   buildingHeights: 'source-height-or-estimate';
   annotationStrategy: 'screen-overlay-no-depth-test';
   durationMs: number;
@@ -110,8 +113,10 @@ function surfaceCoordinate(map: LibreMap, coordinate: Coordinate): Coordinate {
   return [lng,coordinate[1]];
 }
 function createMap(container: HTMLElement, options: MapControllerOptions, forExport = false): LibreMap {
+  let map:LibreMap|undefined;
+  const requests=createMapRequestManager(options.source??OPENFREEMAP_SOURCE,error=>map?.fire('error',{error}));
   try {
-    return new LibreMap({
+    map=new LibreMap({
       container, style:compileMapStyle({camera:options.camera,recipe:options.style,source:options.source,journey:options.journey,photoPoints:options.photoPoints,
         showRoute:options.showRoute,showArrows:options.showArrows,showStops:options.showStops,showNumbers:options.showNumbers,showNames:options.showNames}),
       ...cameraOptions(options.camera),interactive:options.interactive !== false, attributionControl:forExport ? false : {compact:true},
@@ -120,8 +125,10 @@ function createMap(container: HTMLElement, options: MapControllerOptions, forExp
       fadeDuration:0,maxPitch:75,maxZoom:20,minZoom:1,renderWorldCopies:true,trackResize:!forExport,
       centerClampedToGround:options.camera.elevation === undefined,
       localIdeographFontFamily:false,
+      transformRequest:requests.transformRequest,
     });
-  } catch(error) { throw new MapRenderError('WEBGL_UNAVAILABLE','无法启动真实地图渲染，请使用支持 WebGL 2 的浏览器或继续编辑照片作品',[safeError(error)],false); }
+    map.once('remove',()=>requests.dispose());return map;
+  } catch(error) { requests.dispose();throw new MapRenderError('WEBGL_UNAVAILABLE','无法启动真实地图渲染，请使用支持 WebGL 2 的浏览器或继续编辑照片作品',[safeError(error)],false); }
 }
 
 /** Atlas camera changes never mutate a project's canonical artwork camera. */
@@ -257,7 +264,9 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
   const width=Math.round(spec.logicalWidth),height=Math.round(spec.logicalHeight),ratio=spec.pixelRatio ?? 1;
   validateRenderDimensions(width,height,ratio);
   const source=spec.source ?? OPENFREEMAP_SOURCE;
+  const terrainPolicy=spec.camera.terrain?PROVIDER_POLICIES[spec.camera.terrainProvider]:undefined;
   if(!source.policy.exportAllowed)throw new MapRenderError('EXPORT_PERMISSION','当前地图来源不允许导出',[],false);
+  if(terrainPolicy && !terrainPolicy.exportAllowed)throw new MapRenderError('EXPORT_PERMISSION','当前地形来源不允许导出',[],false);
   const started=performance.now();const errors:string[]=[];
   const holder=document.createElement('div');holder.style.cssText=`position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;pointer-events:none;opacity:0;`;
   document.body.append(holder);
@@ -266,7 +275,7 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
     spec.onStage?.('加载真实地图、字体与地形');
     map=createMap(holder,{camera:spec.camera,style:spec.style,source,journey:spec.journey,showRoute:spec.showRoute,showArrows:spec.showArrows,showStops:false,interactive:false,pixelRatio:ratio},true);
     map.on('error',e=>errors.push(safeError(e.error)));
-    await waitForResources(map,errors,signal,spec.timeoutMs ?? 45_000);
+    await waitForResources(map,errors,signal,spec.timeoutMs ?? (ratio>1?120_000:45_000));
     throwIfAborted(signal,'map');
     if(spec.camera.terrain && map.queryTerrainElevation(spec.camera.center)===null)throw new MapRenderError('DEM_UNAVAILABLE','当前区域的真实地形未加载，请重试或明确切换为 2D');
     spec.onStage?.('核验地图像素与固定视角');
@@ -284,11 +293,12 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
       return{visitId:v.id,number:index<0?null:index+1,name:v.name,coordinate:v.coordinate!,x:point.x,y:point.y,
         visible:point.x>=0 && point.y>=0 && point.x<=width && point.y<=height,photoIds:[...v.photoIds]};
     });
+    const printAttribution=[...new Set([...source.policy.printAttribution,...(terrainPolicy?.printAttribution??[])])];
     const receipt:MapRenderReceipt={renderer:'maplibre-gl@6.18.0',provider:source.id,providerVersion:source.version,
       terrainProvider:spec.camera.terrain?spec.camera.terrainProvider:undefined,terrainExaggeration:spec.camera.exaggeration,camera:cameraState(map,spec.camera),
       logicalWidth:width,logicalHeight:height,width:canvas.width,height:canvas.height,pixelRatio:map.getPixelRatio(),selectionRevision:spec.journey?.selectionRevision,
       barriers:{tiles:true,glyphs:true,terrain:spec.camera.terrain?'ready':'not-requested',sourceErrors:0},
-      attribution:source.id==='openfreemap'?attributionForMap(spec.camera.terrain,spec.camera.terrainProvider,true):[...source.policy.printAttribution,...(spec.camera.terrain?PROVIDER_POLICIES[spec.camera.terrainProvider].printAttribution:[])],
+      attribution:printAttribution,printAttribution,snapshotBundleAllowed:source.policy.snapshotBundleAllowed && (terrainPolicy?.snapshotBundleAllowed??true),
       buildingHeights:'source-height-or-estimate',annotationStrategy:'screen-overlay-no-depth-test',durationMs:performance.now()-started,completedAt:new Date().toISOString()};
     return{canvas,annotations,receipt,dispose(){canvas.width=1;canvas.height=1;}};
   } finally {map?.remove();holder.remove();}

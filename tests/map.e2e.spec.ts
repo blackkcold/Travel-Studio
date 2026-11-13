@@ -1,7 +1,8 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 
-test.describe.configure({mode:'serial'});
+// Each real export runs sequentially below. The independent failure gate still
+// runs if the public success service is temporarily unavailable (workers = 1).
 test('live Photon → vector map → real terrain → fixed-camera 4096 PNG',async({page},testInfo)=>{
   test.setTimeout(360_000);
   const consoleErrors:string[]=[];page.on('pageerror',error=>consoleErrors.push(error.message));
@@ -38,14 +39,16 @@ test('live Photon → vector map → real terrain → fixed-camera 4096 PNG',asy
   expect(consoleErrors).toEqual([]);
 });
 
-test('missing map glyphs block export instead of producing a false success',async({page})=>{
+test('missing map glyphs block export instead of producing a false success',async({page,context})=>{
   test.setTimeout(120_000);
   // Fault injection is separate from the unmocked, real-provider success gate above.
-  await page.route('**/fonts/**',route=>route.abort('failed'));
+  let blockedGlyphRequests=0;
+  await context.route('**/fonts/**',route=>{blockedGlyphRequests++;return route.abort('failed');});
   await page.goto('/tests/fixtures/map.html');await page.getByRole('button',{name:'提交查询'}).click();
   await expect(page.locator('#search-status')).toContainText('找到',{timeout:45_000});
   await page.locator('#export-2d').click();
   await expect(page.locator('#export-status')).toContainText('导出失败',{timeout:60_000});
   await expect(page.locator('#export-status')).not.toContainText('导出完成');
   await expect(page.locator('#download')).toBeHidden();
+  expect(blockedGlyphRequests).toBeGreaterThan(0);
 });

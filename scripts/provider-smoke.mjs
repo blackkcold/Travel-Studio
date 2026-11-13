@@ -1,6 +1,7 @@
 /** Low-frequency real-service smoke. Fixtures are not used here. Run explicitly. */
 import {writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {dirname} from 'node:path';
 
 const timestamp=new Date().toISOString();
 const evidence={timestamp,kind:'live-public-provider-smoke',node:process.version,results:[]};
@@ -32,6 +33,10 @@ const rawQuery='日本京都清水寺';
 const raw=json(await get(`https://photon.komoot.io/api/?q=${encodeURIComponent(rawQuery)}&limit=5`,'Photon original text'));
 if(raw)evidence.results.at(-1).candidates=raw.features.map(f=>({name:f.properties.name,city:f.properties.city,coordinate:f.geometry.coordinates,sourceId:`${f.properties.osm_type}:${f.properties.osm_id}`}));
 await new Promise(r=>setTimeout(r,1300));
+const shortQuery='京都清水寺';
+const short=json(await get(`https://photon.komoot.io/api/?q=${encodeURIComponent(shortQuery)}&limit=5`,'Photon exact short Chinese query'));
+if(short)evidence.results.at(-1).candidates=short.features.map(f=>({name:f.properties.name,city:f.properties.city,coordinate:f.geometry.coordinates,sourceId:`${f.properties.osm_type}:${f.properties.osm_id}`}));
+await new Promise(r=>setTimeout(r,1300));
 const normalized=normalize(rawQuery);
 const response=json(await get(`https://photon.komoot.io/api/?q=${encodeURIComponent(normalized)}&limit=5`,'Photon Unicode-normalized query'));
 if(response)evidence.results.at(-1).candidates=response.features.map(f=>({name:f.properties.name,city:f.properties.city,coordinate:f.geometry.coordinates,sourceId:`${f.properties.osm_type}:${f.properties.osm_id}`}));
@@ -47,8 +52,15 @@ if(candidate) {
   if(dem?.tiles?.[0])await get(replace(dem.tiles[0]),'Mapterhorn live DEM tile at searched candidate');
 }
 await get('https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/0-255.pbf','Map glyph resource');
+if(candidate){
+  await new Promise(r=>setTimeout(r,1300));
+  const [lng,lat]=candidate.geometry.coordinates;
+  const reverse=json(await get(`https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}&limit=1`,'Photon reverse searched candidate'));
+  if(reverse)evidence.results.at(-1).candidateCount=reverse.features?.length??0;
+}
 evidence.passed=evidence.results.every(r=>r.ok) && Boolean(candidate);
-evidence.queryNormalization={input:rawQuery,submitted:normalized,method:'Intl.Segmenter word boundaries; single Han suffix joins preceding token',rawCount:raw?.features.length,normalizedCount:response?.features.length};
+evidence.queryNormalization={input:rawQuery,submitted:normalized,shortInput:shortQuery,method:'Intl.Segmenter word boundaries; single Han suffix joins preceding token',rawCount:raw?.features.length,shortRawCount:short?.features.length,normalizedCount:response?.features.length};
 evidence.limits='HTTP checks prove endpoint/data availability only. Real WebGL terrain, exact camera and output resolution are tested separately.';
-await mkdir('test-results',{recursive:true});await writeFile('test-results/provider-smoke.json',JSON.stringify(evidence,null,2)+'\n');
+const outputPath=process.env.TRAVEL_PROVIDER_EVIDENCE_PATH || 'verification-results/provider-smoke.json';
+await mkdir(dirname(outputPath),{recursive:true});await writeFile(outputPath,JSON.stringify(evidence,null,2)+'\n');
 console.log(JSON.stringify(evidence,null,2));if(!evidence.passed)process.exitCode=1;

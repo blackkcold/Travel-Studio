@@ -44,7 +44,7 @@ export function validateMapSourceAdapter(adapter: MapSourceAdapter): void {
   if (!Array.isArray(adapter.policy.requiredAttribution) || !adapter.policy.requiredAttribution.length || !adapter.policy.requiredAttribution.every(v=>typeof v==='string' && v.length>0) || !Array.isArray(adapter.policy.printAttribution) || !adapter.policy.printAttribution.length || !adapter.policy.printAttribution.every(v=>typeof v==='string' && v.length>0) || !adapter.policy.policyURL || !adapter.policy.reviewedAt) throw new Error('地图来源必须声明署名与政策版本');
   validateServiceURL(adapter.policy.policyURL);
   for(const key of ['offlineAllowed','bundleAllowed','snapshotBundleAllowed','exportAllowed','publicService'] as const)if(typeof adapter.policy[key]!=='boolean')throw new Error('地图来源能力政策必须显式声明');
-  if(!['http','memory','none'].includes(adapter.policy.cacheMode) || !Number.isFinite(adapter.policy.cacheTTL) || adapter.policy.cacheTTL<0 || !Number.isInteger(adapter.policy.maxConcurrency) || adapter.policy.maxConcurrency<1 || adapter.policy.maxConcurrency>8)throw new Error('地图缓存或并发政策无效');
+  if(!['http','memory','none'].includes(adapter.policy.cacheMode) || !Number.isFinite(adapter.policy.cacheTTL) || adapter.policy.cacheTTL<0 || !Number.isInteger(adapter.policy.maxConcurrency) || adapter.policy.maxConcurrency<1 || adapter.policy.maxConcurrency>8 || !Number.isFinite(adapter.policy.minimumIntervalMs) || adapter.policy.minimumIntervalMs<0)throw new Error('地图缓存或并发政策无效');
 }
 
 /** Declarative provider manifests carry complete schema/attribution mapping, never executable code. */

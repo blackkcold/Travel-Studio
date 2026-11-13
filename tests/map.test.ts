@@ -1,6 +1,7 @@
 import { describe,it,expect } from 'vitest';
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
-import { compileMapStyle,DEFAULT_MAP_RECIPE,photoGeoJSON,routeGeoJSON,visitGeoJSON,terrainSource,validateRenderDimensions,OPENFREEMAP_SOURCE,validateMapSourceAdapter } from '../src/map';
+import { PbfWriter } from 'pbf';
+import { compileMapStyle,DEFAULT_MAP_RECIPE,photoGeoJSON,routeGeoJSON,visitGeoJSON,terrainSource,validateRenderDimensions,OPENFREEMAP_SOURCE,validateMapSourceAdapter,assertGlyphPbf } from '../src/map';
 import { DEFAULT_CAMERA,emptyJourney } from '../src/domain';
 
 describe('real map contracts',()=>{
@@ -42,5 +43,16 @@ describe('real map contracts',()=>{
   it('requires schema and attribution mappings for replacement providers',()=>{
     expect(()=>validateMapSourceAdapter(OPENFREEMAP_SOURCE)).not.toThrow();
     expect(()=>validateMapSourceAdapter({...OPENFREEMAP_SOURCE,policy:{...OPENFREEMAP_SOURCE.policy,requiredAttribution:[]}})).toThrow();
+  });
+  it('rejects malformed glyph data before a silent local-font fallback',()=>{
+    const make=(bitmapBytes:number)=>{
+      const writer=new PbfWriter();writer.writeMessage(1,(_value,stack)=>{
+        stack.writeStringField(1,'Noto Sans Regular');stack.writeStringField(2,'0-255');
+        stack.writeMessage(3,(_glyph,pbf)=>{pbf.writeVarintField(1,65);pbf.writeBytesField(2,new Uint8Array(bitmapBytes));pbf.writeVarintField(3,1);pbf.writeVarintField(4,2);},null);
+      },null);return new Uint8Array(writer.finish()).buffer;
+    };
+    expect(()=>assertGlyphPbf(make(56))).not.toThrow();
+    expect(()=>assertGlyphPbf(make(1))).toThrow();
+    expect(()=>assertGlyphPbf(new TextEncoder().encode('<html>network gateway error</html>').buffer)).toThrow();
   });
 });

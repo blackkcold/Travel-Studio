@@ -8,3 +8,5 @@ playwright-report/
 .DS_Store
 coverage/
 tmp/
+verification-results/
+release/

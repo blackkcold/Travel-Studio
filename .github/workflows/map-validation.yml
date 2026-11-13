@@ -31,6 +31,7 @@ jobs:
         with:
           name: real-map-evidence
           path: |
+            verification-results/
             test-results/
             playwright-report/
           retention-days: 14

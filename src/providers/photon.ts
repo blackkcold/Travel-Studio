@@ -60,9 +60,10 @@ export function parsePhotonResponse(body: unknown, query: string, resolvedAt = n
     if (!name) continue;
     const sourceId = `${stringValue(p.osm_type) || 'location'}:${typeof p.osm_id === 'number' || typeof p.osm_id === 'string' ? p.osm_id : feature.geometry.coordinates.join(',')}`;
     const locationType = stringValue(p.type) || stringValue(p.osm_value);
-    const precision: LocationPrecision = /^(city|town|village|municipality|locality)$/.test(locationType) ? 'city' :
+    const precision: LocationPrecision = /^(city|town|village|hamlet|municipality|locality|district|suburb)$/.test(locationType) ? 'city' :
       /^(country|state|region|county)$/.test(locationType) ? 'region' :
-      p.osm_key === 'highway' || locationType === 'street' ? 'street' : 'exact';
+      p.osm_key === 'highway' || locationType === 'street' ? 'street' :
+      locationType === 'house' || /^(amenity|tourism|shop|historic|building)$/.test(stringValue(p.osm_key)) ? 'exact' : 'unknown';
     const context = [p.housenumber, p.street, p.district, p.city, p.state, p.country].map(stringValue).filter(Boolean);
     const coordinate: Coordinate = [feature.geometry.coordinates[0], feature.geometry.coordinates[1]];
     if (results.some(r => r.sourceId === sourceId)) continue;
@@ -78,16 +79,19 @@ export function parseRetryAfter(value: string | null, now = Date.now()): number 
   if (!value) return 30_000;
   const seconds = Number(value);
   const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now;
-  return Number.isFinite(delay) ? Math.max(1000, Math.min(delay, 3_600_000)) : 30_000;
+  return Number.isFinite(delay) ? Math.max(1000, delay) : 30_000;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   throwIfAborted(signal, 'photon');
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
+    let timer:ReturnType<typeof setTimeout>;
+    const deadline=Date.now()+ms;
     const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(abortError('photon')); };
-    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+    const wait=()=>{const remaining=deadline-Date.now();if(remaining<=0){signal?.removeEventListener('abort',abort);resolve();}else timer=setTimeout(wait,Math.min(remaining,2_147_483_647));};
     signal?.addEventListener('abort', abort, {once:true});
+    wait();
   });
 }
 
@@ -133,13 +137,14 @@ export class PhotonProvider implements GeoProvider {
     if (signal?.aborted) return Promise.reject(abortError(this.id));
     signal = signal ? AbortSignal.any([signal, this.lifecycle.signal]) : this.lifecycle.signal;
     const key = url.href;
+    const forThisInput=(result:PlaceCandidate[])=>structuredClone(result).map(candidate=>({...candidate,originalInput:query,submittedQuery:url.searchParams.get('q')??query}));
     const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.at < this.policy.cacheTTL) return Promise.resolve(structuredClone(cached.result));
+    if (cached && Date.now() - cached.at < this.policy.cacheTTL) return Promise.resolve(forThisInput(cached.result));
     const job = this.queue.catch(() => undefined).then(async () => {
       if (this.disposed) throw abortError(this.id);
       throwIfAborted(signal, this.id);
       const nowCached = this.cache.get(key);
-      if (nowCached && Date.now() - nowCached.at < this.policy.cacheTTL) return structuredClone(nowCached.result);
+      if (nowCached && Date.now() - nowCached.at < this.policy.cacheTTL) return forThisInput(nowCached.result);
       await delay(this.nextAllowedAt - Date.now(), signal);
       throwIfAborted(signal, this.id);
       const controller = new AbortController(); this.controllers.add(controller);
