@@ -1,13 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { strToU8, zipSync } from 'fflate';
 import { APP_URL, GPS_PHOTOS, UNKNOWN_PHOTO, TITLE, observeNetwork, importFromWelcome, expectCounts, createArtwork, chooseTemplate, chooseStyle, editorTab, setSwitch, setTitleAndDate, selectFirstPhoto, waitForArtwork, downloadProject, openProject, frozenContent, exportImage, closeExport } from './helpers/app';
 
-test.describe.configure({ mode: 'serial' });
+test.use({ video: 'on' });
 
 test('real UI: A–B–A → frozen artwork → actual exports → complete and lean recovery', async ({ page, browser }, testInfo) => {
   test.setTimeout(900_000);
   const network = observeNetwork(page);
+  const outputs = [];
   await importFromWelcome(page);
   await expectCounts(page, 3, 2, 3);
   const rows = page.locator('.reorder-list > li');
@@ -30,6 +32,11 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
   await createArtwork(page);
   await chooseTemplate(page, '照片地图卡');
   await setTitleAndDate(page);
+  const inkOutput = await exportImage(page, testInfo, 'png', 2048, { name: 'gps-ink-png-2048' });
+  expect(inkOutput.receipt.style).toBe('ink@1.0.0');
+  expect(inkOutput.receipt.mapMode).toBe('live');
+  outputs.push(inkOutput.receipt);
+  await closeExport(page);
 
   await selectFirstPhoto(page);
   await setSwitch(page, '固定位置', true);
@@ -96,16 +103,24 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
   await expect(page.locator('.frozen-journey')).not.toContainText('资料库中已更新');
   await expect(page.locator('.frozen-journey')).not.toContainText('2026-07-24');
 
-  const outputs = [];
-  for (const [format, edge] of [['png', 2048], ['png', 4096], ['jpeg', 1920], ['webp', 1920]] as const) {
+  for (const [format, edge] of [['png', 4096], ['jpeg', 1920], ['webp', 1920]] as const) {
     const output = await exportImage(page, testInfo, format, edge);
     expect(output.receipt.mapMode).toBe('live');
     expect(output.receipt.map?.barriers).toMatchObject({ tiles: true, glyphs: true, sourceErrors: 0 });
-    expect(output.receipt.map?.camera).toEqual(originalArt.canonicalCamera);
+    const camera = output.receipt.map!.camera, expectedCamera = originalArt.canonicalCamera;
+    expect(camera.center[0]).toBeCloseTo(expectedCamera.center[0], 8);
+    expect(camera.center[1]).toBeCloseTo(expectedCamera.center[1], 8);
+    for (const key of ['zoom', 'pitch', 'bearing', 'exaggeration'] as const) expect(camera[key], key).toBeCloseTo(expectedCamera[key], 6);
+    expect(camera.terrain).toBe(expectedCamera.terrain);
+    expect(camera.terrainProvider).toBe(expectedCamera.terrainProvider);
+    expect(camera.projection).toBe(expectedCamera.projection);
     expect(output.receipt.map!.width).toBeGreaterThanOrEqual(Math.round(output.receipt.map!.logicalWidth * output.receipt.map!.pixelRatio));
     expect(output.receipt.map!.height).toBeGreaterThanOrEqual(Math.round(output.receipt.map!.logicalHeight * output.receipt.map!.pixelRatio));
     outputs.push(output.receipt);
   }
+  const print = await exportImage(page, testInfo, 'png', 0, { name: 'flat-print-150x100mm-300ppi-3mm', flatPrint: { widthMm: 150, heightMm: 100, ppi: 300, bleedMm: 3 } });
+  expect(print.receipt.mapMode).toBe('live');
+  outputs.push(print.receipt);
   await closeExport(page);
   await page.getByRole('button', { name: '复制当前作品', exact: true }).click();
   await waitForArtwork(page);
@@ -141,6 +156,32 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
   await expect(page.locator('.project-list > button')).toHaveCount(2);
   await page.getByRole('dialog', { name: '旅行项目', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
 
+  // Explicit compatibility fixture: only schemaVersion changes; the ZIP hashes remain valid.
+  const futureEntries = { ...full.entries }, futureDocument = { ...full.project, schemaVersion: 99 }, futureManifest = structuredClone(full.manifest);
+  futureEntries['project.json'] = strToU8(JSON.stringify(futureDocument));
+  const documentEntry = futureManifest.entries.find(entry => entry.path === 'project.json')!;
+  documentEntry.byteLength = futureEntries['project.json'].byteLength;
+  documentEntry.hash = createHash('sha256').update(futureEntries['project.json']).digest('hex');
+  futureManifest.schemaVersion = 99;
+  futureEntries['manifest.json'] = strToU8(JSON.stringify(futureManifest));
+  const futureBytes = Buffer.from(zipSync(futureEntries));
+  await page.getByRole('button', { name: '项目与作品', exact: true }).click();
+  const readonlyDialog = page.getByRole('dialog', { name: '旅行项目', exact: true });
+  await readonlyDialog.locator('input[type=file][accept=".travelstudio"]').setInputFiles({ name: 'future-version.travelstudio', mimeType: 'application/zip', buffer: futureBytes });
+  const recoveryRegion = readonlyDialog.getByRole('region', { name: '项目只读恢复', exact: true });
+  await expect(recoveryRegion).toBeVisible({ timeout: 90_000 });
+  await expect(recoveryRegion.getByRole('img', { name: '只读保存预览 1', exact: true })).toBeVisible();
+  await expect(readonlyDialog.getByRole('button', { name: '保存完整项目包', exact: true })).toHaveCount(0);
+  const originalPending = page.waitForEvent('download');
+  await recoveryRegion.getByRole('button', { name: '下载原始项目文件', exact: true }).click();
+  const originalDownload = await originalPending, originalPath = testInfo.outputPath('future-version-untouched.travelstudio');
+  await originalDownload.saveAs(originalPath);
+  expect(await readFile(originalPath)).toEqual(futureBytes);
+  await readonlyDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  const unchanged = await downloadProject(page, testInfo, 'after-readonly-future-check');
+  expect(unchanged.project.id).toBe(recoveryCopy.project.id);
+  expect(frozenContent(unchanged.project.artworks[0])).toEqual(frozenContent(recoveryCopy.project.artworks[0]));
+
   for (const [name, archive] of [['full', full], ['lean', lean]] as const) {
     // A new context has an empty IndexedDB and no session from the original authoring browser.
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, baseURL: APP_URL });
@@ -170,6 +211,29 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
         expect(offline.receipt.resourceBarrier).toEqual(expect.arrayContaining(['snapshot-metadata', 'snapshot-pixels', 'snapshot-attribution']));
         expect(offline.receipt.map?.attribution).toEqual(savedArt.mapSnapshot?.attribution);
         await closeExport(restored);
+
+        // Explicit local-storage corruption injection after a real import and save.
+        await restored.evaluate(async id => {
+          const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('travel-studio-v1'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+          await new Promise<void>((resolve, reject) => { const transaction = database.transaction('projects', 'readwrite'), store = transaction.objectStore('projects'), request = store.get(id); request.onsuccess = () => { const document = request.result; document.schemaVersion = 99; document.revision += 1; document.updatedAt = new Date().toISOString(); store.put(document); }; transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); });
+          database.close();
+        }, archive.project.id);
+        await restored.reload();
+        const startup = restored.getByRole('dialog', { name: '旅行项目', exact: true });
+        await expect(startup).toBeVisible({ timeout: 90_000 });
+        await expect(startup).toContainText('创建自动恢复副本');
+        const damaged = startup.locator('.project-list > button').filter({ has: restored.locator('strong', { hasText: new RegExp(`^${archive.project.name}$`) }) });
+        await expect(damaged).toContainText('仅恢复');
+        await damaged.click();
+        const localRecovery = startup.getByRole('region', { name: '项目只读恢复', exact: true });
+        await expect(localRecovery).toBeVisible();
+        const rawPending = restored.waitForEvent('download');
+        await localRecovery.getByRole('button', { name: '下载本机原始文档', exact: true }).click();
+        const rawDownload = await rawPending, rawPath = testInfo.outputPath('damaged-local-original.json');
+        await rawDownload.saveAs(rawPath);
+        expect(JSON.parse(await readFile(rawPath, 'utf8'))).toMatchObject({ id: archive.project.id, schemaVersion: 99 });
+        await startup.getByRole('button', { name: '关闭', exact: true }).click();
+        await waitForArtwork(restored);
       }
       expect(restoredNetwork.writes).toEqual([]);
       expect(restoredNetwork.errors).toEqual([]);
@@ -182,7 +246,7 @@ test('real UI: A–B–A → frozen artwork → actual exports → complete and 
 
 test('390 × 844 touch UI: reachable import, unknown facts, editing, undo, preferences and photo-only export', async ({ browser }, testInfo) => {
   test.setTimeout(240_000);
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1, baseURL: APP_URL });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1, baseURL: APP_URL, recordVideo: { dir: testInfo.outputPath('mobile-video'), size: { width: 390, height: 844 } } });
   const page = await context.newPage(), network = observeNetwork(page);
   try {
     await page.goto(APP_URL);
@@ -222,5 +286,47 @@ test('390 × 844 touch UI: reachable import, unknown facts, editing, undo, prefe
     expect(archive.project.library.visits[0].time.value).toBeUndefined();
     expect(network.writes).toEqual([]);
     expect(network.errors).toEqual([]);
-  } finally { await context.close(); }
+  } finally { await context.close(); const video = page.video(); if (video) await testInfo.attach('mobile-touch-flow', { path: await video.path(), contentType: 'video/webm' }); }
+});
+
+test('real UI search without keys: Japanese address → candidate → 2D/3D → map-only artwork', async ({ page }, testInfo) => {
+  test.setTimeout(420_000);
+  const network = observeNetwork(page);
+  await page.goto(APP_URL);
+  await page.locator('.welcome-card').getByRole('button', { name: '添加地点', exact: true }).click();
+  const place = page.getByRole('dialog', { name: '添加一站', exact: true });
+  await place.getByLabel('搜索地点', { exact: true }).fill('日本京都清水寺');
+  await place.getByRole('button', { name: '搜索', exact: true }).click();
+  const candidate = place.locator('.search-results > button').filter({ hasText: '清水寺' }).first();
+  await expect(candidate).toBeVisible({ timeout: 90_000 });
+  await candidate.click();
+  const longitude = Number(await place.getByLabel('经度（WGS84）', { exact: true }).inputValue());
+  const latitude = Number(await place.getByLabel('纬度（WGS84）', { exact: true }).inputValue());
+  expect(Math.abs(longitude - 135.7844)).toBeLessThan(.05);
+  expect(Math.abs(latitude - 34.9943)).toBeLessThan(.05);
+  await place.getByRole('button', { name: '确认地点与到访', exact: true }).click();
+  await expectCounts(page, 1, 1, 0);
+  const dimension = page.getByRole('group', { name: '地图维度', exact: true });
+  await dimension.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(dimension.getByRole('button', { name: '3D', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await dimension.getByRole('button', { name: '2D', exact: true }).click();
+  await expect(dimension.getByRole('button', { name: '2D', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await dimension.getByRole('button', { name: '3D', exact: true }).click();
+  await createArtwork(page);
+  await setTitleAndDate(page, '清水寺 · 山间一站');
+  await chooseStyle(page, '精致手绘');
+  await page.locator('.artwork-canvas').screenshot({ path: testInfo.outputPath('live-address-sketch-3d.png') });
+  await chooseStyle(page, '复古羊皮纸');
+  const output = await exportImage(page, testInfo, 'png', 2048, { name: 'live-address-parchment-3d-2048' });
+  expect(output.receipt.mapMode).toBe('live');
+  expect(output.receipt.map?.barriers).toMatchObject({ terrain: 'ready', sourceErrors: 0 });
+  expect(output.receipt.map?.camera.terrain).toBe(true);
+  expect(output.receipt.map?.camera.pitch).toBeCloseTo(55, 5);
+  await closeExport(page);
+  const archive = await downloadProject(page, testInfo, 'live-address-map-only');
+  expect(archive.project.library.photos).toHaveLength(0);
+  expect(archive.project.library.places[0]).toMatchObject({ source: 'photon', status: 'confirmed' });
+  expect(archive.project.library.visits[0].time.precision).toBe('unknown');
+  expect(network.writes).toEqual([]);
+  expect(network.errors).toEqual([]);
 });

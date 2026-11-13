@@ -39,6 +39,12 @@ The ZIP central directory is inspected **before** inflation. Limits are 256 MiB 
 
 Container version 1 and document schema 1 are supported. A schema 0 single-artwork fixture can migrate to `artworks[0]` on a copied document. Future/incompatible documents produce `ProjectRecoveryError`, preserving the original file and available preview blobs; they are not silently rewritten. Missing plugins must preserve embedded recipe data and the old preview. Opening such a project does not authorize executing project-provided code.
 
+If the device already contains different work with the imported project ID, import creates an independent project named with `· 恢复副本`. The existing project and its saved recovery revisions remain intact. Identical imports keep their original identity. This makes deliberately opening an older backup possible without disabling the stale-write protection used by automatic saves.
+
+On startup, `recoverLatestProject` checks the latest document, referenced asset presence and installed design compatibility. If necessary it tries saved revisions from newest to oldest, saving a valid history as a new `· 自动恢复` project. The incompatible source remains available in the project list. If no valid revision exists, an empty workbench opens with a recovery notice; the local entries are not deleted.
+
+The project dialog presents future-version files in read-only recovery, with saved PNG/JPEG/WebP previews and an unchanged download of the original package. A damaged local entry supports preview and original document JSON download; that JSON does not contain photo binary data, which remains in IndexedDB. Recovery previews cannot be edited or exported as if a new complete document had been restored.
+
 Restoration preserves structure and saved appearance. Online tiles and DEM are not bundled. A saved map frame can be viewed offline, but new map framing or complete offline map editing requires legitimately available map data. Merely retaining a tile URL cannot guarantee that the same map-data version remains online.
 
 ## Public storage API
@@ -47,6 +53,6 @@ Restoration preserves structure and saved appearance. Online tiles and DEM are n
 
 `ProjectStore`: `saveProject`, `loadProject`, `latestProject`, `listProjects`, `listRevisions`, `recoverRevision`, `saveWorkspace`, `loadWorkspace`.
 
-`exportProjectPackage(project, assetStore, { artworkId? })` produces a complete ZIP. `importProjectPackage(blob)` validates it without mutating storage. `persistImportedPackage(result, storage)` writes assets before committing the project. `exportProjectJSON` is for inspectable metadata/debugging only; JSON alone is not a portable photo backup.
+`exportProjectPackage(project, assetStore, { artworkId? })` produces a complete ZIP. `importProjectPackage(blob)` validates it without mutating storage. `persistImportedPackage(result, storage)` writes assets before committing and returns the saved project (which may have a new recovery identity). `exportProjectJSON` is for inspectable metadata/debugging only; JSON alone is not a portable photo backup.
 
 See `tests/storage.test.ts` for round trips into empty storage, isolated slim packages, changed/deleted source-photo recovery, corruption rejection, unsafe paths and persisted Blob recovery.

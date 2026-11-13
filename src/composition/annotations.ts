@@ -47,6 +47,7 @@ export interface AnnotationLayoutInput {
 
 const EPSILON=1e-7;
 const copy=(p:AnnotationPoint):AnnotationPoint=>({x:p.x,y:p.y});
+const compareId=(a:string,b:string)=>a===b?0:a<b?-1:1;
 const distance=(a:AnnotationPoint,b:AnnotationPoint)=>Math.hypot(a.x-b.x,a.y-b.y);
 const overlaps=(a:AnnotationBounds,b:AnnotationBounds)=>a.x<b.x+b.width-EPSILON && a.x+a.width>b.x+EPSILON && a.y<b.y+b.height-EPSILON && a.y+a.height>b.y+EPSILON;
 const contains=(r:AnnotationBounds,p:AnnotationPoint)=>p.x>=r.x&&p.x<=r.x+r.width&&p.y>=r.y&&p.y<=r.y+r.height;
@@ -133,13 +134,13 @@ export function solveAnnotationLayout(input:AnnotationLayoutInput):AnnotationLay
   const anchors=input.anchors.map(anchor=>({...anchor,point:{x:anchor.x*scaleX,y:anchor.y*scaleY}}));
   const byVisit=new Map(anchors.map(anchor=>[anchor.visitId,anchor]));
   const inMap=(a:typeof anchors[number])=>a.visible&&Number.isFinite(a.point.x)&&Number.isFinite(a.point.y)&&a.point.x>=0&&a.point.y>=0&&a.point.x<=mapFrame.width&&a.point.y<=mapFrame.height;
-  const photos=[...(input.photoNodes??[])].filter(node=>node.kind==='photo'&&node.photoId).sort((a,b)=>a.zIndex-b.zIndex||a.id.localeCompare(b.id));
+  const photos=[...(input.photoNodes??[])].filter(node=>node.kind==='photo'&&node.photoId).sort((a,b)=>a.zIndex-b.zIndex||compareId(a.id,b.id));
   const photoOutlines=new Map(photos.map(node=>[node.id,polygon(node.transform,mapFrame,Math.max(5,Math.min(node.transform.width,node.transform.height)*.035))]));
   const textObstacles=(input.obstacles??[]).map(obstacle=>inflate(bounds(polygon(obstacle.transform,mapFrame)),4));
   const reserved=[...textObstacles,...[...photoOutlines.values()].map(outline=>inflate(bounds(outline),3))];
   const occupied:AnnotationBounds[]=[];
   const badgeOffsets=offsets();
-  const ordered=anchors.filter(inMap).sort((a,b)=>(a.number??Infinity)-(b.number??Infinity)||a.visitId.localeCompare(b.visitId));
+  const ordered=anchors.filter(inMap).sort((a,b)=>(a.number??Infinity)-(b.number??Infinity)||compareId(a.visitId,b.visitId));
   for(const anchor of ordered){
     let center=copy(anchor.point);
     if(input.showNumbers){

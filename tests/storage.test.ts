@@ -1,8 +1,9 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
+import { openDB } from 'idb';
 import { createEmptyProject, createArtwork, emptyJourney, createWorkspace } from '../src/domain';
-import { createBrowserStore, createMemoryStore, exportProjectPackage, importProjectPackage, projectForArtwork, inspectPackageArchive, persistImportedPackage, hashBytes } from '../src/storage';
+import { createBrowserStore, createMemoryStore, exportProjectPackage, importProjectPackage, projectForArtwork, inspectPackageArchive, persistImportedPackage, recoverLatestProject, hashBytes } from '../src/storage';
 import type { ProjectDocument, AssetManifest } from '../src/domain';
 
 async function fixture(): Promise<{ storage: ReturnType<typeof createMemoryStore>; project: ProjectDocument; own: AssetManifest; other: AssetManifest }> {
@@ -39,6 +40,31 @@ describe('asset persistence and recovery', () => {
     expect((await reopened.projects.loadProject(project.id))?.assets[0].hash).toBe(asset.hash);
     expect(await (await reopened.assets.getAsset(asset.id))?.text()).toBe('photo');
     expect((await reopened.projects.loadWorkspace(project.id))?.mode).toBe('atlas'); reopened.close();
+  });
+  it('recovers a valid history as a new project while retaining the incompatible local source', async () => {
+    const name = `recovery-${crypto.randomUUID()}`, storage = await createBrowserStore(name), original = createEmptyProject('History');
+    await storage.projects.saveProject(original);
+    const raw = await openDB(name), incompatible = { ...original, schemaVersion: 99, revision: 4 };
+    await raw.put('projects', incompatible); raw.close();
+    const recovered = await recoverLatestProject(storage);
+    expect(recovered.project?.id).not.toBe(original.id);
+    expect(recovered.project?.schemaVersion).toBe(1);
+    expect(recovered.recovery).toMatchObject({ sourceProjectId: original.id, revision: 0 });
+    expect(await storage.projects.loadRawProject(original.id)).toEqual(incompatible);
+    expect((await storage.projects.listProjects()).find(entry => entry.id === original.id)?.recoveryOnly).toBe(true);
+    expect(await storage.projects.loadProject(recovered.project!.id)).toEqual(recovered.project);
+    storage.close();
+  });
+  it('leaves a damaged local entry untouched when no valid history exists', async () => {
+    const name = `unrecoverable-${crypto.randomUUID()}`, storage = await createBrowserStore(name), original = createEmptyProject('Keep raw');
+    const raw = await openDB(name), incompatible = { ...original, schemaVersion: 99, artworks: null };
+    await raw.put('projects', incompatible); raw.close();
+    const result = await recoverLatestProject(storage);
+    expect(result.project).toBeUndefined();
+    expect(result.recovery?.sourceProjectId).toBe(original.id);
+    expect(await storage.projects.loadRawProject(original.id)).toEqual(incompatible);
+    expect(await storage.projects.listProjects()).toHaveLength(1);
+    storage.close();
   });
 });
 describe('portable project integrity and privacy', () => {

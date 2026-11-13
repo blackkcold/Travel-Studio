@@ -63,4 +63,11 @@ describe('safe project schema and restoration', () => {
     project.assets = [{ id: a, hash: a, sourceAssetId: b, kind: 'derived', mime: 'image/png', byteLength: 1 }, { id: b, hash: b, sourceAssetId: a, kind: 'derived', mime: 'image/png', byteLength: 1 }];
     expect(validateProject(project).issues.some(issue => issue.message.includes('成环'))).toBe(true);
   });
+  it('retains a generated version owned by an artwork even before binding it to a node', () => {
+    const project = createEmptyProject(), source = 'a'.repeat(64), derivative = 'b'.repeat(64), unrelated = 'c'.repeat(64);
+    project.assets = [{ id: source, hash: source, kind: 'original', mime: 'image/jpeg', byteLength: 1 }, { id: derivative, hash: derivative, kind: 'derived', mime: 'image/png', byteLength: 1, sourceAssetId: source }, { id: unrelated, hash: unrelated, kind: 'derived', mime: 'image/png', byteLength: 1, sourceAssetId: source }];
+    project.artworks.push(createArtwork(undefined, 'saved version', { derivedAssetIds: [derivative] }));
+    expect(validateProject(project).valid).toBe(true); expect(collectAssetReferences(project)).toEqual(new Set([source, derivative]));
+    project.artworks[0].derivedAssetIds!.push('missing'); expect(validateProject(project).valid).toBe(false);
+  });
 });

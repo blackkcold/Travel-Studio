@@ -71,12 +71,43 @@ export function validateProject(input: unknown): ValidationResult {
   assets.forEach((a, i) => {
     const path = `assets[${i}]`; check(typeof a.hash === 'string' && /^[a-f0-9]{64}$/i.test(a.hash), `${path}.hash`, '资源 SHA-256 无效'); check(text(a.mime), `${path}.mime`, '资源 MIME 无效'); check(Number.isSafeInteger(a.byteLength) && (a.byteLength as number) >= 0, `${path}.byteLength`, '资源大小无效');
     check(enumOf(a.kind, ['original', 'proxy', 'thumbnail', 'derived', 'map-snapshot', 'texture', 'font', 'preview']), `${path}.kind`, '资源类型无效'); assetRef(a.sourceAssetId, `${path}.sourceAssetId`);
+    if (a.derivation !== undefined) {
+      const derived = a.derivation;
+      if (!record(derived)) issue(`${path}.derivation`, '衍生来源必须是对象');
+      else {
+        check(a.kind === 'derived' && derived.kind === 'ai-stylize' && derived.consentPurpose === 'stylize', `${path}.derivation`, 'AI 衍生类型或授权用途不一致');
+        check(typeof derived.inputHash === 'string' && /^[a-f0-9]{64}$/i.test(derived.inputHash) && derived.inputHash === a.sourceAssetId, `${path}.derivation.inputHash`, 'AI 输入哈希必须对应 sourceAssetId');
+        for (const field of ['providerId', 'model']) check(typeof derived[field] === 'string' && !!(derived[field] as string).trim() && (derived[field] as string).length <= 300, `${path}.derivation.${field}`, 'AI 服务或模型标识无效');
+        check(typeof derived.prompt === 'string' && derived.prompt.length <= 40_000, `${path}.derivation.prompt`, 'AI 生成要求过长或无效');
+        check(typeof derived.generatedAt === 'string' && derived.generatedAt.length <= 100 && Number.isFinite(Date.parse(derived.generatedAt)), `${path}.derivation.generatedAt`, 'AI 生成时间无效');
+      }
+    }
   });
   const assetById = new Map(assets.map(a => [a.id, a]));
   for (const asset of assets) { const chain = new Set<unknown>(); let cursor: Record<string, unknown> | undefined = asset; while (cursor?.sourceAssetId) { if (chain.has(cursor.id)) { issue(`assets.${String(asset.id)}`, '衍生资源链不能成环'); break; } chain.add(cursor.id); cursor = assetById.get(cursor.sourceAssetId); } }
   places.forEach((p, i) => { const path = `library.places[${i}]`; check(text(p.name), `${path}.name`, '地点名无效'); check(text(p.crs) && text(p.source), path, '缺少坐标系或来源'); check(enumOf(p.precision, ['exact', 'street', 'city', 'region', 'unknown']), `${path}.precision`, '位置精度无效'); check(enumOf(p.status, ['confirmed', 'candidate', 'missing']), `${path}.status`, '位置状态无效'); if (p.coordinate !== undefined) check(coordinate(p.coordinate), `${path}.coordinate`, '经纬度范围无效'); if (p.status === 'confirmed') check(coordinate(p.coordinate), `${path}.coordinate`, '确认地点必须有有效坐标'); });
   photos.forEach((p, i) => { const path = `library.photos[${i}]`; assetRef(p.assetId, `${path}.assetId`, true); assetRef(p.thumbnailAssetId, `${path}.thumbnailAssetId`); assetRef(p.proxyAssetId, `${path}.proxyAssetId`); check(text(p.name) && text(p.mime), path, '缺少照片名称或格式'); check(finite(p.width) && p.width > 0 && finite(p.height) && p.height > 0, path, '照片尺寸无效'); time(p.time, `${path}.time`); if (p.placeId !== undefined) check(placeIds.has(p.placeId), `${path}.placeId`, '地点引用不存在'); if (p.visitId !== undefined) check(visitIds.has(p.visitId), `${path}.visitId`, '到访引用不存在'); });
-  visits.forEach((v, i) => { const path = `library.visits[${i}]`; refs(v.photoIds, photoIds, `${path}.photoIds`); if (v.placeId !== undefined) check(placeIds.has(v.placeId), `${path}.placeId`, '地点引用不存在'); check(Number.isSafeInteger(v.stableIndex) && (v.stableIndex as number) >= 0, `${path}.stableIndex`, '稳定次序无效'); time(v.time, `${path}.time`); });
+  visits.forEach((v, i) => {
+    const path = `library.visits[${i}]`; refs(v.photoIds, photoIds, `${path}.photoIds`); if (v.placeId !== undefined) check(placeIds.has(v.placeId), `${path}.placeId`, '地点引用不存在'); check(Number.isSafeInteger(v.stableIndex) && (v.stableIndex as number) >= 0, `${path}.stableIndex`, '稳定次序无效'); time(v.time, `${path}.time`);
+    if (v.history !== undefined) {
+      if (!Array.isArray(v.history)) issue(`${path}.history`, '到访命令历史必须是数组');
+      else for (const [index, entry] of v.history.entries()) {
+        const entryPath = `${path}.history[${index}]`;
+        if (!record(entry)) { issue(entryPath, '到访命令记录无效'); continue; }
+        check(id(entry.id) && enumOf(entry.kind, ['merge', 'split', 'time']) && typeof entry.at === 'string' && Number.isFinite(Date.parse(entry.at)), entryPath, '到访命令身份、类型或时间无效');
+        check(Array.isArray(entry.targetVisitIds) && entry.targetVisitIds.length > 0 && unique(entry.targetVisitIds) && entry.targetVisitIds.every(id), `${entryPath}.targetVisitIds`, '历史目标身份无效');
+        if (!Array.isArray(entry.sourceVisits) || !entry.sourceVisits.length) issue(`${entryPath}.sourceVisits`, '到访命令缺少原始来源');
+        else for (const [sourceIndex, source] of entry.sourceVisits.entries()) {
+          const sourcePath = `${entryPath}.sourceVisits[${sourceIndex}]`;
+          if (!record(source)) { issue(sourcePath, '来源快照必须是对象'); continue; }
+          check(id(source.visitId) && Number.isSafeInteger(source.stableIndex) && (source.stableIndex as number) >= 0 && text(source.createdAt), sourcePath, '历史到访来源无效');
+          check(Array.isArray(source.photoIds) && unique(source.photoIds) && source.photoIds.every(id), `${sourcePath}.photoIds`, '历史照片身份无效');
+          if (source.placeId !== undefined) check(id(source.placeId), `${sourcePath}.placeId`, '历史地点身份无效');
+          time(source.time, `${sourcePath}.time`);
+        }
+      }
+    }
+  });
   provenance.forEach((p, i) => { check(text(p.label) && typeof p.required === 'boolean', `provenance[${i}]`, '署名数据无效'); if (p.url !== undefined) check(typeof p.url === 'string' && /^https?:\/\//.test(p.url), `provenance[${i}].url`, '来源地址必须是 HTTP(S)'); });
   function selectionRecipe(value: unknown, path: string): void {
     if (!record(value)) { issue(path, '缺少选择规则'); return; }
@@ -110,6 +141,7 @@ export function validateProject(input: unknown): ValidationResult {
     check(Array.isArray(a.frozenPhotoBindings), `${path}.frozenPhotoBindings`, '缺少冻结照片引用'); check(unique(bindings.map(b => b.photoId)), `${path}.frozenPhotoBindings`, '冻结照片身份不得重复');
     bindings.forEach((b, j) => { check(id(b.photoId), `${path}.frozenPhotoBindings[${j}]`, '照片身份无效'); for (const k of ['assetId', 'thumbnailAssetId', 'proxyAssetId', 'derivedAssetId']) assetRef(b[k], `${path}.frozenPhotoBindings[${j}].${k}`, k === 'assetId'); });
     assetRef(a.previewAssetId, `${path}.previewAssetId`); assetRef(a.mapSnapshotAssetId, `${path}.mapSnapshotAssetId`); refs(a.attributionIds, attributionIds, `${path}.attributionIds`);
+    if (a.derivedAssetIds !== undefined) refs(a.derivedAssetIds, assetIds, `${path}.derivedAssetIds`);
     if (a.mapSnapshot !== undefined) {
       const snapshot = a.mapSnapshot;
       if (!record(snapshot)) issue(`${path}.mapSnapshot`, '地图快照元数据无效');
@@ -144,7 +176,7 @@ export function migrateProject(input: unknown): ProjectDocument {
 export function collectAssetReferences(project: ProjectDocument): Set<string> {
   const refs = new Set<string>(); const add = (id: string | undefined) => { if (id) refs.add(id); };
   for (const photo of project.library.photos) { add(photo.assetId); add(photo.thumbnailAssetId); add(photo.proxyAssetId); }
-  for (const artwork of project.artworks) { add(artwork.previewAssetId); add(artwork.mapSnapshotAssetId); for (const binding of artwork.frozenPhotoBindings) { add(binding.assetId); add(binding.thumbnailAssetId); add(binding.proxyAssetId); add(binding.derivedAssetId); } for (const node of artwork.nodes) { add(node.assetId); add(node.photoEdit?.derivedAssetId); } }
+  for (const artwork of project.artworks) { add(artwork.previewAssetId); add(artwork.mapSnapshotAssetId); for (const id of artwork.derivedAssetIds ?? []) add(id); for (const binding of artwork.frozenPhotoBindings) { add(binding.assetId); add(binding.thumbnailAssetId); add(binding.proxyAssetId); add(binding.derivedAssetId); } for (const node of artwork.nodes) { add(node.assetId); add(node.photoEdit?.derivedAssetId); } }
   const lookup = new Map(project.assets.map(asset => [asset.id, asset]));
   for (const ref of refs) add(lookup.get(ref)?.sourceAssetId);
   return refs;

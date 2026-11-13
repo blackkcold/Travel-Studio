@@ -58,9 +58,19 @@
         "© OpenStreetMap contributors"
       ],
       "printAttribution": [
-        "OpenFreeMap · openfreemap.org",
-        "© OpenMapTiles · openmaptiles.org",
-        "© OpenStreetMap contributors · openstreetmap.org/copyright"
+        "OpenFreeMap · https://openfreemap.org/",
+        "© OpenMapTiles · https://openmaptiles.org/",
+        "© OpenStreetMap contributors · https://www.openstreetmap.org/copyright"
+      ],
+      "attributionURLs": [
+        "https://openfreemap.org/",
+        "https://openmaptiles.org/",
+        "https://www.openstreetmap.org/copyright"
+      ],
+      "sourceLicenseURLs": [
+        "https://openfreemap.org/tos/",
+        "https://openmaptiles.org/docs/terminology/attribution/",
+        "https://www.openstreetmap.org/copyright"
       ],
       "exportAllowed": true,
       "cacheMode": "http",

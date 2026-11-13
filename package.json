@@ -11,7 +11,9 @@
     "check": "tsc -b && node scripts/check-boundaries.mjs && node scripts/check-inventory.mjs",
     "test:e2e": "playwright test",
     "test:providers": "node scripts/provider-smoke.mjs",
-    "test:stress": "python3 scripts/generate-fixtures.py --stress && TRAVEL_STRESS=1 playwright test tests/photo.e2e.spec.ts"
+    "test:stress": "python3 scripts/generate-fixtures.py --stress && TRAVEL_STRESS=1 playwright test tests/photo.e2e.spec.ts",
+    "licenses": "node scripts/collect-notices.mjs",
+    "package": "node scripts/package-release.mjs"
   },
   "repository": {
     "type": "git",

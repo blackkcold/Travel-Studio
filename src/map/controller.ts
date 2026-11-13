@@ -74,6 +74,7 @@ export interface MapRenderReceipt {
   attribution: string[];
   printAttribution: string[];
   snapshotBundleAllowed: boolean;
+  sourceLicenseURLs?:string[];
   buildingHeights: 'source-height-or-estimate';
   annotationStrategy: 'screen-overlay-no-depth-test';
   durationMs: number;
@@ -303,6 +304,7 @@ export async function renderMapFrame(spec:MapRenderSpec, outerSignal?:AbortSigna
       logicalWidth:width,logicalHeight:height,width:canvas.width,height:canvas.height,pixelRatio:map.getPixelRatio(),selectionRevision:spec.journey?.selectionRevision,
       barriers:{tiles:true,glyphs:true,terrain:spec.camera.terrain?'ready':'not-requested',sourceErrors:0},completedResources:{...completedResources},
       attribution:printAttribution,printAttribution,snapshotBundleAllowed:source.policy.snapshotBundleAllowed && (terrainPolicy?.snapshotBundleAllowed??true),
+      sourceLicenseURLs:[...new Set([...(source.policy.sourceLicenseURLs??[source.policy.policyURL]),...(terrainPolicy?.sourceLicenseURLs??[])])],
       buildingHeights:'source-height-or-estimate',annotationStrategy:'screen-overlay-no-depth-test',durationMs:performance.now()-started,completedAt:new Date().toISOString()};
     return{canvas,annotations,receipt,dispose(){canvas.width=1;canvas.height=1;}};
   } finally {map?.remove();holder.remove();}

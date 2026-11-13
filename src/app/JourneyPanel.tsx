@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowRight, CalendarDays, SlidersHorizontal, MapPin, CheckCheck, X, Plus, LocateFixed } from 'lucide-react';
 import type { Coordinate, JourneySnapshot, ProjectDocument, SelectionRecipe, VisitOrder, VisitRecord } from '../domain';
 import { evaluateSelection, toggleSelection, toggleVisitSelection, visitSelectionState, selectionKey, formatTimeEvidence, moveVisit } from '../journey';
-import { Badge, Button, Checkbox, Field, IconButton, Panel, PhotoCard, ReorderList, Segmented, Select, Switch, VirtualList } from '../ui';
+import { Badge, Button, Checkbox, Field, IconButton, Panel, PhotoCard, ReorderList, Segmented, Select, Switch, VirtualList, Popover } from '../ui';
 import { useAssetURL } from './context';
 
 export function SelectionRules({recipe,onChange,center}:{recipe:SelectionRecipe;onChange:(r:SelectionRecipe)=>void;center:Coordinate}){
@@ -29,12 +29,12 @@ export function VisitOrderEditor({journey,order,onOrder,onFocus,onEdit,project,r
     {journey.route.gaps.some(g=>g.reason!=='unresolved-time')&&<p className="notice">部分到访尚未定位，路线在此断开；请补充位置后连接。</p>}
   </div>;
 }
-export function JourneyPanel({project,journey,recipe,onRecipe,order,onOrder,center,onFocus,onEdit,onLocate,onCreate,onAddPlace,session,onApply,onCancel}:{project:ProjectDocument;journey:JourneySnapshot;recipe:SelectionRecipe;onRecipe:(r:SelectionRecipe)=>void;order:Partial<VisitOrder>;onOrder:(o:Partial<VisitOrder>)=>void;center:Coordinate;onFocus:(id:string)=>void;onEdit:(id:string)=>void;onLocate:(id:string)=>void;onCreate:()=>void;onAddPlace:()=>void;session:boolean;onApply:()=>void;onCancel:()=>void}){
+export function JourneyPanel({project,journey,recipe,onRecipe,order,onOrder,center,onFocus,onEdit,onLocate,onCreate,onAddPlace,onManageVisits,session,onApply,onCancel}:{project:ProjectDocument;journey:JourneySnapshot;recipe:SelectionRecipe;onRecipe:(r:SelectionRecipe)=>void;order:Partial<VisitOrder>;onOrder:(o:Partial<VisitOrder>)=>void;center:Coordinate;onFocus:(id:string)=>void;onEdit:(id:string)=>void;onLocate:(id:string)=>void;onCreate:()=>void;onAddPlace:()=>void;onManageVisits:()=>void;session:boolean;onApply:()=>void;onCancel:()=>void}){
   const[tab,setTab]=useState<'journey'|'photos'>('journey'),[rules,setRules]=useState(false),result=evaluateSelection(project.library,recipe);
   return <Panel title="我的行程" eyebrow="A COLLECTION OF PLACES" className="journey-panel"><div className="journey-stats"><div><strong>{result.counts.visits}</strong><span>次到访</span></div><div><strong>{result.counts.places}</strong><span>个地点</span></div><div><strong>{result.counts.photos}</strong><span>张照片</span></div></div><div className="journey-actions"><Segmented label="行程内容" value={tab} onChange={setTab} options={[{value:'journey',label:'行程序列'},{value:'photos',label:'全部照片'}]}/><IconButton label="自动选择规则" className={rules?'selected':''} onClick={()=>setRules(!rules)}><SlidersHorizontal size={17}/></IconButton></div>
-    {rules&&<SelectionRules recipe={recipe} onChange={onRecipe} center={center}/>}
+    {rules&&<Popover title="自动选择规则" onClose={()=>setRules(false)}><SelectionRules recipe={recipe} onChange={onRecipe} center={center}/></Popover>}
     {recipe.predicates.length>0&&<div className="rule-summary">自动 {result.counts.automatic} · 加入 {result.counts.included} · 排除 {result.counts.excluded}{recipe.predicates.filter(p=>p.type==='date').map(p=><small key={p.type}>{p.anchor||'请选择参考日'} 前 {p.daysBefore} / 后 {p.daysAfter} 天</small>)}{recipe.predicates.filter(p=>p.type==='radius').map(p=><small key={p.type}>距参考点 {p.radiusKm} km · {recipe.combine==='all'?'同时满足':'满足任一'}</small>)}</div>}
     {tab==='journey'?<VisitOrderEditor {...{journey,order,onOrder,onFocus,onEdit,project,recipe,onRecipe}}/>:<CandidateList project={project} recipe={recipe} onChange={onRecipe} onLocate={onLocate}/>}
-    <div className="journey-footer"><Button variant="quiet" icon={<Plus size={15}/>} onClick={onAddPlace}>添加一站</Button>{session?<div className="two-columns"><Button onClick={onCancel}>取消选取</Button><Button variant="primary" onClick={onApply}>应用到作品</Button></div>:<Button variant="primary" icon={<ArrowRight size={16}/>} onClick={onCreate} disabled={!result.counts.photos&&!result.counts.visits}>创作这段旅程</Button>}</div>
+    <div className="journey-footer"><Button variant="quiet" icon={<Plus size={15}/>} onClick={onAddPlace}>添加一站</Button><Button variant="quiet" disabled={!project.library.visits.length} onClick={onManageVisits}>管理到访记录</Button>{session?<div className="two-columns"><Button onClick={onCancel}>取消选取</Button><Button variant="primary" onClick={onApply}>应用到作品</Button></div>:<Button variant="primary" icon={<ArrowRight size={16}/>} onClick={onCreate} disabled={!result.counts.photos&&!result.counts.visits}>创作这段旅程</Button>}</div>
   </Panel>;
 }

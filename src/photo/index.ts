@@ -193,6 +193,7 @@ export async function processPhoto(blob: Blob, edits: Partial<PhotoEdit> = {}, s
   const dimensions = resized(decoded.width, decoded.height, maximumEdge);
   const canvas = makeCanvas(dimensions.width, dimensions.height);
   try {
+  try {
     const ctx = contextFor(canvas); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(decoded.image, 0, 0, canvas.width, canvas.height);
   } finally { decoded.dispose(); }
   throwIfAborted(signal);
@@ -207,7 +208,6 @@ export async function processPhoto(blob: Blob, edits: Partial<PhotoEdit> = {}, s
     luminance = new Uint8Array(canvas.width * canvas.height);
     for (let i = 0; i < luminance.length; i++) luminance[i] = pixels[i * 4] * .2126 + pixels[i * 4 + 1] * .7152 + pixels[i * 4 + 2] * .0722;
   }
-  try {
     for (let y = 0; y < canvas.height; y++) {
       if (y % 128 === 0) { throwIfAborted(signal); if (y) await new Promise<void>(resolve => setTimeout(resolve, 0)); }
       for (let x = 0; x < canvas.width; x++) {
@@ -240,7 +240,7 @@ export async function processPhoto(blob: Blob, edits: Partial<PhotoEdit> = {}, s
       }
     }
     ctx.putImageData(image, 0, 0); return canvas;
-  } catch (error) { canvas.width = 1; canvas.height = 1; throw error; }
+  } catch (error) { canvas.width = 0; canvas.height = 0; throw error; }
 }
 
 export async function saveDerivedPhoto(blob: Blob, sourceAssetId: string, edits: Partial<PhotoEdit>, styleId: string, store: AssetStore, signal?: AbortSignal): Promise<AssetManifest> {

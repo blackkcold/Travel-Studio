@@ -1,7 +1,7 @@
 import type { StyleSpecification, LayerSpecification, RasterDEMSourceSpecification, ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type * as GeoJSON from 'geojson';
 import type { CameraSpec, Coordinate, JourneySnapshot } from '../domain';
-import { PROVIDER_POLICIES, validateServiceURL, type ProviderPolicy } from '../providers';
+import { PROVIDER_POLICIES, validateServiceURL,providerAttributionHTML, type ProviderPolicy } from '../providers';
 
 export interface MapArtRecipe {
   id?: string;
@@ -47,6 +47,8 @@ export function validateMapSourceAdapter(adapter: MapSourceAdapter): void {
   if (!adapter.id || !adapter.version || !Object.values(adapter.layers).every(v => /^[a-zA-Z0-9_-]+$/.test(v)) || !Object.values(adapter.fields).every(v => /^[a-zA-Z0-9_:.-]+$/.test(v))) throw new Error('地图数据映射缺失或无效');
   if (!Array.isArray(adapter.policy.requiredAttribution) || !adapter.policy.requiredAttribution.length || !adapter.policy.requiredAttribution.every(v=>typeof v==='string' && v.length>0) || !Array.isArray(adapter.policy.printAttribution) || !adapter.policy.printAttribution.length || !adapter.policy.printAttribution.every(v=>typeof v==='string' && v.length>0) || !adapter.policy.policyURL || !adapter.policy.reviewedAt) throw new Error('地图来源必须声明署名与政策版本');
   validateServiceURL(adapter.policy.policyURL);
+  if(adapter.policy.attributionURLs){if(!Array.isArray(adapter.policy.attributionURLs)||adapter.policy.attributionURLs.length!==adapter.policy.requiredAttribution.length)throw new Error('地图署名链接数量不匹配');for(const url of adapter.policy.attributionURLs)validateServiceURL(url);}
+  if(adapter.policy.sourceLicenseURLs){if(!Array.isArray(adapter.policy.sourceLicenseURLs))throw new Error('地图来源许可链接无效');for(const url of adapter.policy.sourceLicenseURLs)validateServiceURL(url);}
   for(const key of ['offlineAllowed','bundleAllowed','snapshotBundleAllowed','exportAllowed','publicService'] as const)if(typeof adapter.policy[key]!=='boolean')throw new Error('地图来源能力政策必须显式声明');
   if(!['http','memory','none'].includes(adapter.policy.cacheMode) || !Number.isFinite(adapter.policy.cacheTTL) || adapter.policy.cacheTTL<0 || !Number.isInteger(adapter.policy.maxConcurrency) || adapter.policy.maxConcurrency<1 || adapter.policy.maxConcurrency>8 || !Number.isFinite(adapter.policy.minimumIntervalMs) || adapter.policy.minimumIntervalMs<0)throw new Error('地图缓存或并发政策无效');
 }
@@ -69,10 +71,10 @@ export function mapSourceFromManifest(manifest: unknown): MapSourceAdapter {
 export function terrainSource(provider: CameraSpec['terrainProvider']): RasterDEMSourceSpecification {
   return provider === 'aws' ? {
     type:'raster-dem', tiles:['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'], tileSize:256, encoding:'terrarium', maxzoom:15,
-    attribution:'Terrain Tiles / Mapzen · <a href="https://registry.opendata.aws/terrain-tiles/">sources</a>',
+    attribution:providerAttributionHTML(PROVIDER_POLICIES.aws),
   } : {
     type:'raster-dem', url:'https://tiles.mapterhorn.com/tilejson.json', tileSize:512, encoding:'terrarium', maxzoom:14,
-    attribution:'<a href="https://mapterhorn.com/attribution/">Terrain © Mapterhorn / source providers</a>',
+    attribution:providerAttributionHTML(PROVIDER_POLICIES.mapterhorn),
   };
 }
 
@@ -152,7 +154,7 @@ export function compileMapStyle(options: MapStyleOptions): StyleSpecification {
   const style: StyleSpecification = {
     version:8, name:`Travel Studio / ${p.id ?? 'custom'}`, glyphs:a.glyphs,
     sources:{
-      basemap:{type:'vector',url:a.tileJSON,attribution:a.policy.requiredAttribution.join(' · ')},
+      basemap:{type:'vector',url:a.tileJSON,attribution:providerAttributionHTML(a.policy)},
       journey:{type:'geojson',data:routeGeoJSON(options.journey)},visits:{type:'geojson',data:visitGeoJSON(options.journey)},
       photos:{type:'geojson',data:options.photoPoints ? photoGeoJSON(options.photoPoints):emptyCollection(),cluster:true,clusterRadius:44,clusterMaxZoom:16},
     },layers,projection:{type:options.camera.projection},transition:{duration:0,delay:0},

@@ -145,11 +145,16 @@ export function frozenContent(art: ArtworkDocument) {
   return { journey: art.journey, photos: art.frozenPhotoBindings, camera: art.canonicalCamera, artboard: art.artboard, nodes: art.nodes, visibility: art.visibility, layout: art.layout, metadata: art.metadata, styleId: art.styleId, paletteId: art.paletteId, templateId: art.templateId };
 }
 
-export async function exportImage(page: Page, testInfo: TestInfo, format: 'png' | 'jpeg' | 'webp', longEdge: number, options: { savedMap?: boolean; name?: string } = {}) {
+export async function exportImage(page: Page, testInfo: TestInfo, format: 'png' | 'jpeg' | 'webp', longEdge: number, options: { savedMap?: boolean; name?: string; flatPrint?: { widthMm: number; heightMm: number; ppi: number; bleedMm: number } } = {}) {
   if (!await page.getByRole('dialog', { name: '把这段旅程带走', exact: true }).count()) await page.getByRole('button', { name: '导出', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '把这段旅程带走', exact: true });
+  await dialog.getByRole('group', { name: '输出用途', exact: true }).getByRole('button', { name: options.flatPrint ? '平面印刷' : '展示分享', exact: true }).click();
   await dialog.getByLabel('图片格式', { exact: true }).selectOption(format);
-  await dialog.getByLabel('输出长边', { exact: true }).selectOption(String(longEdge));
+  if (options.flatPrint) {
+    await dialog.getByLabel('卡面宽度（毫米）', { exact: true }).fill(String(options.flatPrint.widthMm));
+    await dialog.getByLabel('分辨率（PPI）', { exact: true }).fill(String(options.flatPrint.ppi));
+    await dialog.getByLabel('四边出血（毫米）', { exact: true }).fill(String(options.flatPrint.bleedMm));
+  } else await dialog.getByLabel('输出长边', { exact: true }).selectOption(String(longEdge));
   if (options.savedMap) await setSwitch(dialog, '明确使用已保存地图快照', true);
   const generate = dialog.getByRole('button', { name: '生成图片', exact: true });
   await generate.click();
@@ -170,7 +175,10 @@ export async function exportImage(page: Page, testInfo: TestInfo, format: 'png' 
   await receiptDownload.saveAs(receiptPath);
   const bytes = await readFile(path), receipt = JSON.parse(await readFile(receiptPath, 'utf8')) as ExportReceipt;
   expect(receipt.format).toBe(`image/${format}`);
-  expect(Math.max(receipt.width, receipt.height)).toBe(longEdge);
+  if (options.flatPrint) {
+    const print = options.flatPrint;
+    expect(receipt).toMatchObject({ intent: 'flat-print', ppi: print.ppi, bleedMm: print.bleedMm, width: Math.round((print.widthMm + 2 * print.bleedMm) / 25.4 * print.ppi), height: Math.round((print.heightMm + 2 * print.bleedMm) / 25.4 * print.ppi) });
+  } else { expect(Math.max(receipt.width, receipt.height)).toBe(longEdge); expect(receipt.intent).toBe('presentation'); }
   expect(receipt.bytes).toBe(bytes.byteLength);
   expect(receipt.resourceBarrier).toEqual(expect.arrayContaining(['fonts', 'photos', 'composition', 'encoded-dimensions']));
   const decoded = await preview.evaluate(image => ({ width: (image as HTMLImageElement).naturalWidth, height: (image as HTMLImageElement).naturalHeight }));
@@ -179,6 +187,14 @@ export async function exportImage(page: Page, testInfo: TestInfo, format: 'png' 
     expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     expect(bytes.readUInt32BE(16)).toBe(receipt.width);
     expect(bytes.readUInt32BE(20)).toBe(receipt.height);
+    if (options.flatPrint) {
+      let offset = 8; const densities: Array<{ x: number; y: number; unit: number }> = [];
+      while (offset + 12 <= bytes.length) { const length = bytes.readUInt32BE(offset); if (bytes.toString('ascii', offset + 4, offset + 8) === 'pHYs') densities.push({ x: bytes.readUInt32BE(offset + 8), y: bytes.readUInt32BE(offset + 12), unit: bytes[offset + 16] }); offset += length + 12; }
+      const density = Math.round(options.flatPrint.ppi / .0254);
+      expect(densities).toEqual([{ x: density, y: density, unit: 1 }]);
+      const alpha = await preview.evaluate(image => { const img = image as HTMLImageElement, canvas = document.createElement('canvas'); canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; const context = canvas.getContext('2d')!; context.drawImage(img, 0, 0); const values = [[0, 0], [canvas.width - 1, 0], [0, canvas.height - 1], [canvas.width - 1, canvas.height - 1]].map(([x, y]) => context.getImageData(x, y, 1, 1).data[3]); canvas.width = 0; canvas.height = 0; return values; });
+      expect(alpha).toEqual([255, 255, 255, 255]);
+    }
   } else if (format === 'jpeg') expect([...bytes.subarray(0, 2)]).toEqual([255, 216]);
   else { expect(bytes.toString('ascii', 0, 4)).toBe('RIFF'); expect(bytes.toString('ascii', 8, 12)).toBe('WEBP'); }
   let metadata: Record<string, unknown> | undefined;

@@ -7,6 +7,8 @@ type ResourceResult={data:ArrayBuffer|string|object;cacheControl?:string|null;ex
 export interface MapResourceAudit { basemapTiles:number; terrainTiles:number; glyphRanges:number; sourceDocuments:number }
 type SharedProvider={scheduler:ProviderRequestScheduler;refs:number;cache:Map<string,{value:ResourceResult;expires:number;bytes:number}>;bytes:number};
 const sharedProviders=new Map<string,SharedProvider>();
+// Preserve server cooldowns when a failed map is closed and a new one is opened.
+const providerCooldowns=new Map<string,number>();
 const managers=new Map<string,MapRequestManager>();
 let nextManager=0;let protocolInstalled=false;
 
@@ -29,7 +31,12 @@ class MapRequestManager {
     const key=JSON.stringify(policy);
     if(!this.providers.has(key)){
       let shared=sharedProviders.get(key);
-      if(!shared){shared={scheduler:new ProviderRequestScheduler(policy),refs:0,cache:new Map(),bytes:0};sharedProviders.set(key,shared);}
+      if(!shared){
+        shared={scheduler:new ProviderRequestScheduler(policy),refs:0,cache:new Map(),bytes:0};
+        const deadline=providerCooldowns.get(policy.id)??0;
+        if(deadline>Date.now())shared.scheduler.pauseFor(deadline-Date.now());else providerCooldowns.delete(policy.id);
+        sharedProviders.set(key,shared);
+      }
       shared.refs++;this.providers.set(key,{policy,shared});
     }
     return this.providers.get(key)!;
@@ -50,7 +57,7 @@ class MapRequestManager {
       const response=await fetch(url,{method:'GET',signal:AbortSignal.any([signal,AbortSignal.timeout(30_000)]),
         credentials:'omit',cache:policy.cacheMode==='http'?'default':'no-store',referrerPolicy:'strict-origin-when-cross-origin'});
       if(response.url)validateServiceURL(response.url);
-      if(response.status===429){const wait=parseRetryAfter(response.headers.get('Retry-After'));shared.scheduler.pauseFor(wait);throw new Error(`${policy.id}: HTTP 429，请在 ${Math.ceil(wait/1000)} 秒后重试`);}
+      if(response.status===429){const wait=parseRetryAfter(response.headers.get('Retry-After'));providerCooldowns.set(policy.id,Math.max(providerCooldowns.get(policy.id)??0,Date.now()+wait));shared.scheduler.pauseFor(wait);throw new Error(`${policy.id}: HTTP 429，请在 ${Math.ceil(wait/1000)} 秒后重试`);}
       if(!response.ok)throw new Error(`${policy.id}: HTTP ${response.status} (${new URL(url).origin})`);
       const maxBytes=parameters.type==='json' || resourceType==='Glyphs'?2*1024*1024:16*1024*1024;
       if(Number(response.headers.get('Content-Length'))>maxBytes)throw new Error(`${policy.id}: 地图资源超过大小限制`);

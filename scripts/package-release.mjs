@@ -4,7 +4,7 @@ const root=resolve(import.meta.dirname,'..');
 const pkg=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
 const directory=resolve(root,`release/Travel-Studio-${pkg.version}`);
 await rm(directory,{recursive:true,force:true});await mkdir(directory,{recursive:true});
-for(const file of ['dist','server','docs','examples','LICENSE','.env.example'])await cp(resolve(root,file),resolve(directory,file),{recursive:true});
+for(const file of ['dist','server','docs','examples','LICENSE','README.md','README.en.md','.env.example'])await cp(resolve(root,file),resolve(directory,file),{recursive:true});
 await writeFile(resolve(directory,'start.sh'),'#!/usr/bin/env sh\nset -eu\ncd "$(dirname "$0")"\nnode --env-file-if-exists=.env server/serve.mjs\n',{mode:0o755});
 await writeFile(resolve(directory,'start.command'),'#!/usr/bin/env sh\nset -eu\ncd "$(dirname "$0")"\nnode --env-file-if-exists=.env server/serve.mjs\n',{mode:0o755});
 await writeFile(resolve(directory,'start.bat'),'@echo off\r\ncd /d "%~dp0"\r\nnode --env-file-if-exists=.env server/serve.mjs\r\npause\r\n');

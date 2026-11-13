@@ -1,7 +1,7 @@
 import type { ArtworkDocument, ProjectDocument, PhotoEdit, MapSnapshotState } from '../domain';
 import { clone } from '../domain';
 import { mapRecipe } from '../design-packages';
-import { renderArtwork, textOverflowNodes, isNodeVisible, type CompositionResources } from '../composition';
+import { renderArtwork, textOverflowNodes, isNodeVisible, wrapText, type CompositionResources } from '../composition';
 import type { MapRenderSpec, MapFrame, MapSourceAdapter, MapRenderReceipt } from '../map';
 
 export interface RenderServices {
@@ -81,8 +81,8 @@ export async function prepareResources(art: ArtworkDocument, services: RenderSer
       await waitFor(document.fonts.ready, signal);
       for (const node of art.nodes.filter(node => isNodeVisible(node, art) && node.kind === 'text' && node.text)) {
         const family = node.fontFamily ?? 'sans-serif';
-        await waitFor(document.fonts.load(`${node.fontSize ?? 16}px ${family}`, node.text), signal);
-        if (!document.fonts.check(`${node.fontSize ?? 16}px ${family}`, node.text)) throw new Error(`字体未准备完成：${family}。请重试或明确选择替代字体。`);
+        await waitFor(document.fonts.load(`${node.role === 'title' ? 500 : 400} ${node.fontSize ?? 16}px ${family}`, node.text), signal);
+        if (!document.fonts.check(`${node.role === 'title' ? 500 : 400} ${node.fontSize ?? 16}px ${family}`, node.text)) throw new Error(`字体未准备完成：${family}。请重试或明确选择替代字体。`);
       }
       const annotationText = art.journey.resolvedVisits.map(visit => visit.name).join('');
       if (annotationText) await waitFor(document.fonts.load('12px "Noto Sans SC"', annotationText), signal);
@@ -167,6 +167,7 @@ export async function exportArtwork(project: ProjectDocument, artworkId: string,
     if (spec.intent === 'flat-print' && prepared.mapMode !== 'not-used') prepared.resources.attributions = [...prepared.printAttribution];
     const attribution = art.nodes.find(node => node.kind === 'attribution');
     if (prepared.resources.attributions.length && (!attribution || !isNodeVisible(attribution, art))) throw new Error('作品使用地图来源，必须保留可读的来源署名。');
+    if(attribution&&prepared.resources.attributions.length){ctx.font=`${attribution.fontSize??9}px Inter, \"Noto Sans SC\", sans-serif`;const lines=wrapText(ctx,prepared.resources.attributions.join(' · '),attribution.transform.width);if(lines.length*11>attribution.transform.height+.1||attribution.transform.y+lines.length*11>art.artboard.height)throw new Error('来源署名空间不足，请选择更宽版式或为来源保留更多空间。');}
     abort(signal); onStage?.('合成冻结的作品');
     if (spec.intent === 'flat-print') {
       // Independent trim/outer rounding preserves exact mm-to-pixel results (odd bleed may differ by 1px).

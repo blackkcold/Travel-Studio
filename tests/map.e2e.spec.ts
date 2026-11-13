@@ -35,7 +35,9 @@ test('live Photon → vector map → real terrain → fixed-camera 4096 PNG',asy
     expect(png.subarray(0,8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));
     expect(png.readUInt32BE(16)).toBe(4096);expect(png.readUInt32BE(20)).toBe(2867);
     const outputPath=testInfo.outputPath(`real-${mode}-4096.png`);await writeFile(outputPath,png);await testInfo.attach(`real-${mode}-4096`,{path:outputPath,contentType:'image/png'});
-    await testInfo.attach(`${mode}-resource-receipt`,{body:JSON.stringify(receipt,null,2),contentType:'application/json'});
+    const receiptPath=testInfo.outputPath(`${mode}-resource-receipt.json`);await writeFile(receiptPath,JSON.stringify(receipt,null,2));
+    await writeFile(testInfo.outputPath(`real-${mode}-4096.credits.txt`),`Source attribution for real-${mode}-4096.png\n${receipt.output.printAttribution.join('\n')}\nThis is the isolated map-rendering test frame. The production compositor includes attribution in the finished artwork.\n`);
+    await testInfo.attach(`${mode}-resource-receipt`,{path:receiptPath,contentType:'application/json'});
     await page.screenshot({path:testInfo.outputPath(`${mode}-browser.png`),fullPage:true});
   }
   expect(consoleErrors).toEqual([]);

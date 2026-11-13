@@ -33,10 +33,10 @@ describe('canonical annotation layout',()=>{
   });
   it('transforms a rotated card into the rotated map frame and connects its nearest border',()=>{
     // This artwork point equals local map (200,150) under a 90 degree frame rotation.
-    const rotated={...frame,rotation:90};const node=photo('card','p',{x:10,y:330,width:80,height:60,rotation:30});
+    const rotated={...frame,rotation:90};const node=photo('card','p',{x:10,y:330,width:80,height:60,rotation:90});
     const result=solveAnnotationLayout(input([anchor('v',200,150,['p'])],{mapFrame:rotated,photoNodes:[node],showNumbers:false}));
     const binding=result.photoBindings[0];expect(binding.status).toBe('bound');expect(binding.anchor).toEqual({x:200,y:150});
-    expect(binding.cardPoint).toBeDefined();expect(Number.isFinite(binding.cardPoint!.x)).toBe(true);
+    expect(binding.cardPoint!.x).toBeCloseTo(245);expect(binding.cardPoint!.y).toBeCloseTo(150);
     expect(result.leaders[0]?.anchor).toEqual(binding.anchor);
   });
   it('clips leaders to the map edge while preserving the actual outside card endpoint',()=>{

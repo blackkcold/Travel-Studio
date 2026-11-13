@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { zip, unzip, strToU8, strFromU8 } from 'fflate';
-import { assertValidProject, collectAssetReferences, migrateProject, newId } from '../domain';
+import { assertValidProject, collectAssetReferences, migrateProject, newId, validateProject } from '../domain';
 import type { ProjectDocument, AssetManifest, WorkspaceState, PhotoRecord, PlaceRecord, VisitRecord } from '../domain';
 
 export type AssetInput = Omit<AssetManifest, 'id' | 'hash' | 'byteLength' | 'mime'> & { mime?: string };
@@ -11,10 +11,11 @@ export interface AssetStore {
   listAssets(): Promise<AssetManifest[]>;
   deleteAsset(id: string, retainedIds?: ReadonlySet<string>): Promise<void>;
 }
-export interface ProjectSummary { id: string; name: string; revision: number; updatedAt: string; artworks: number }
+export interface ProjectSummary { id: string; name: string; revision: number; updatedAt: string; artworks: number; recoveryOnly?: boolean }
 export interface ProjectStore {
   saveProject(project: ProjectDocument): Promise<void>;
   loadProject(id: string): Promise<ProjectDocument | undefined>;
+  loadRawProject(id: string): Promise<unknown>;
   latestProject(): Promise<ProjectDocument | undefined>;
   listProjects(): Promise<ProjectSummary[]>;
   listRevisions(id: string): Promise<number[]>;
@@ -43,7 +44,9 @@ async function assetRecord(blob: Blob, metadata: AssetInput): Promise<StoredAsse
   if (manifest.sourceAssetId === hash) delete manifest.sourceAssetId;
   return { manifest, blob };
 }
-function summary(project: ProjectDocument): ProjectSummary { return { id: project.id, name: project.name, revision: project.revision, updatedAt: project.updatedAt, artworks: project.artworks.length }; }
+function summary(project: ProjectDocument): ProjectSummary {
+  return { id: project.id, name: typeof project.name === 'string' ? project.name : '待恢复项目', revision: Number.isInteger(project.revision) ? project.revision : 0, updatedAt: typeof project.updatedAt === 'string' ? project.updatedAt : '', artworks: Array.isArray(project.artworks) ? project.artworks.length : 0, ...(!validateProject(project).valid ? { recoveryOnly: true } : {}) };
+}
 function clone<T>(value: T): T { return structuredClone(value); }
 
 /** Local origin is stable. Writes fail visibly; there is no silent in-memory "saved" fallback. */
@@ -92,8 +95,9 @@ export async function createBrowserStore(name = 'travel-studio-v1'): Promise<Sto
       await tx.done;
     },
     async loadProject(id) { const project = await db.get('projects', id); if (project) assertValidProject(project); return project; },
-    async latestProject() { const all = await db.getAll('projects'); const project = all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; if (project) assertValidProject(project); return project; },
-    async listProjects() { return (await db.getAll('projects')).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(summary); },
+    async loadRawProject(id) { return db.get('projects', id); },
+    async latestProject() { const all = await db.getAll('projects'); const project = all.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))[0]; if (project) assertValidProject(project); return project; },
+    async listProjects() { return (await db.getAll('projects')).map(summary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); },
     async listRevisions(id) { return (await db.getAllFromIndex('revisions', 'by-project', id)).map(item => item.revision).sort((a, b) => b - a); },
     async recoverRevision(id, revision) { return (await db.get('revisions', `${id}:${revision}`))?.project; },
     async saveWorkspace(state) { await db.put('workspace', clone(state)); },
@@ -125,6 +129,7 @@ export function createMemoryStore(): StorageBundle {
       old.forEach(([key]) => revisions.delete(key));
     },
     async loadProject(id) { const value = documents.get(id); return value && clone(value); },
+    async loadRawProject(id) { const value = documents.get(id); return value && clone(value); },
     async latestProject() { const value = [...documents.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; return value && clone(value); },
     async listProjects() { return [...documents.values()].map(summary); },
     async listRevisions(id) { return [...revisions.values()].filter(p => p.id === id).map(p => p.revision).sort((a, b) => b - a); },
@@ -133,6 +138,37 @@ export function createMemoryStore(): StorageBundle {
     async loadWorkspace(id) { const value = workspaces.get(id); return value && clone(value); },
   };
   return { assets, projects, close() { /* The caller owns the memory session. */ } };
+}
+
+export interface StartupRecovery { message: string; sourceProjectId?: string; restoredProjectId?: string; revision?: number }
+/** Recover a usable history copy without deleting or overwriting an incompatible local document. */
+export async function recoverLatestProject(storage: StorageBundle, options: { validate?: (project: ProjectDocument) => void } = {}): Promise<{ project?: ProjectDocument; recovery?: StartupRecovery }> {
+  let failure: string;
+  const validate = async (project: ProjectDocument) => {
+    assertValidProject(project);
+    options.validate?.(project);
+    for (const assetId of collectAssetReferences(project)) if (!await storage.assets.getManifest(assetId)) throw new Error(`缺少资源 ${assetId.slice(0, 12)}。`);
+  };
+  try { const project = await storage.projects.latestProject(); if (project) await validate(project); return { project }; }
+  catch (error) { failure = error instanceof Error ? error.message : String(error); }
+  const projects = await storage.projects.listProjects();
+  for (const entry of projects) {
+    const versions = (await storage.projects.listRevisions(entry.id)).sort((a, b) => b - a);
+    const candidates: ProjectDocument[] = [];
+    try { const current = await storage.projects.loadProject(entry.id); if (current) candidates.push(current); } catch { /* Keep the source row available for read-only recovery. */ }
+    for (const revision of versions) { const candidate = await storage.projects.recoverRevision(entry.id, revision); if (candidate) candidates.push(candidate); }
+    candidates.sort((a, b) => b.revision - a.revision);
+    for (const candidate of candidates) {
+      try {
+        await validate(candidate);
+        const project = clone(candidate), now = new Date().toISOString();
+        project.id = newId('project'); project.name = `${candidate.name} · 自动恢复`; project.createdAt = now; project.updatedAt = now;
+        await storage.projects.saveProject(project);
+        return { project, recovery: { message: `已从「${entry.name}」修订 ${candidate.revision} 创建自动恢复副本。原始条目保留在本机，可从项目列表只读查看和下载。`, sourceProjectId: entry.id, restoredProjectId: project.id, revision: candidate.revision } };
+      } catch { /* Try an earlier validated revision; never silently repair facts. */ }
+    }
+  }
+  return { recovery: { message: `未找到可编辑的有效历史版本：${failure}。原始条目仍保留在本机，请从项目列表只读查看、下载原始文档，或打开独立项目备份。`, sourceProjectId: projects[0]?.id } };
 }
 
 export interface PackageEntry { path: string; hash: string; byteLength: number; mime: string; assetId?: string }

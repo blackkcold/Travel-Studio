@@ -7,7 +7,7 @@
     <p class="notice">此页只用于受控实测；所有候选、地图与地形均来自公共服务。A-B-A 是测试序列，不表示真实到访。</p>
     <label for="query">地点搜索</label><input id="query" value="日本京都清水寺"><button id="search">提交查询</button>
     <pre id="search-status" aria-live="polite">等待查询</pre><div id="candidates"></div>
-    <div id="map"></div>
+    <div id="map"></div><pre id="map-status" aria-live="polite"></pre>
     <button id="export-2d" disabled>导出真实 2D 4096</button><button id="export-3d" disabled>导出真实 3D 4096</button>
     <pre id="export-status" aria-live="polite">等待导出</pre><pre id="receipt"></pre>
     <img id="output" alt="实际编码的地图文件"><a id="download" hidden>下载当前 PNG</a>

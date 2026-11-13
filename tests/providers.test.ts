@@ -1,5 +1,5 @@
 import { describe,it,expect,vi } from 'vitest';
-import { PhotonProvider,parsePhotonResponse,parseRetryAfter,normalizeSearchQuery,PROVIDER_POLICIES,validateServiceURL,requestAIImage,ProviderRequestScheduler } from '../src/providers';
+import { PhotonProvider,parsePhotonResponse,parseRetryAfter,normalizeSearchQuery,PROVIDER_POLICIES,validateServiceURL,requestAIImage,ProviderRequestScheduler,requestAILocation,parseAILocationResponse,providerAttributionHTML,type AIRequest } from '../src/providers';
 
 const fixture={type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:[135.7844389,34.994303]},properties:{osm_type:'W',osm_id:336641107,osm_key:'amenity',osm_value:'place_of_worship',type:'house',name:'清水寺',city:'京都市',country:'日本'}}]};
 const json=()=>new Response(JSON.stringify(fixture),{headers:{'Content-Type':'application/json'}});
@@ -49,6 +49,11 @@ describe('provider response and consent boundaries',()=>{
     expect(PROVIDER_POLICIES.openfreemap.exportAllowed).toBe(true);expect(PROVIDER_POLICIES.openfreemap.offlineAllowed).toBe(false);expect(PROVIDER_POLICIES.openfreemap.bundleAllowed).toBe(false);
     expect(parseRetryAfter('5')).toBe(5000);expect(parseRetryAfter('86400')).toBe(86_400_000);expect(parseRetryAfter('bad')).toBe(30_000);
   });
+  it('keeps electronic license links and printable source URLs while escaping imported credits',()=>{
+    expect(providerAttributionHTML(PROVIDER_POLICIES.openfreemap)).toContain('https://www.openstreetmap.org/copyright');
+    expect(PROVIDER_POLICIES.aws.printAttribution.join(' ')).toContain('https://github.com/tilezen/joerd/blob/master/docs/attribution.md');
+    expect(providerAttributionHTML({...PROVIDER_POLICIES.openfreemap,requiredAttribution:['<img src=x onerror=alert(1)>'],attributionURLs:[]})).not.toContain('<img');
+  });
 });
 
 describe('shared provider request scheduling',()=>{
@@ -73,5 +78,30 @@ describe('shared provider request scheduling',()=>{
       await vi.advanceTimersByTimeAsync(2999);expect(starts).toEqual([0]);
       await vi.advanceTimersByTimeAsync(1);await expect(second).resolves.toBe('ok');expect(starts).toEqual([0,3000]);
     } finally {scheduler.dispose();vi.useRealTimers();}
+  });
+});
+
+describe('separate AI location consent and provenance',()=>{
+  const inputHash='a'.repeat(64);
+  const request:AIRequest={providerId:'configured',purpose:'locate',inputHash,image:new Blob(['test image'],{type:'image/png'}),prompt:'仅建议可辨认的地点，不确定时返回空候选',model:'vision-model'};
+  const response=()=>({providerId:'configured',model:'vision-model',inputHash,requiresConfirmation:true,candidates:[{name:'清水寺',coordinate:[135.7844389,34.994303],reason:'建筑外观可能相符，需要人工核验',status:'candidate',source:'configured',precision:'unknown'}]});
+  const context=()=>({taskId:'task',projectId:'project',generation:1,inputHash,signal:new AbortController().signal});
+  it('rejects reuse of styling consent before any upload',async()=>{
+    const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);
+    try{await expect(requestAILocation(request,{providerId:'configured',purpose:'stylize',assetHashes:[inputHash],grantedAt:'now'},context())).rejects.toMatchObject({code:'CONSENT_REQUIRED'});expect(fetcher).not.toHaveBeenCalled();}
+    finally{vi.unstubAllGlobals();}
+  });
+  it('sends only the authorized request to the fixed gateway and returns candidates without confidence or confirmation',async()=>{
+    const fetcher=vi.fn(async()=>new Response(JSON.stringify(response()),{headers:{'Content-Type':'application/json'}}));vi.stubGlobal('fetch',fetcher);
+    try{
+      const result=await requestAILocation(request,{providerId:'configured',purpose:'locate',assetHashes:[inputHash],grantedAt:'now'},context());
+      expect(fetcher).toHaveBeenCalledTimes(1);expect(fetcher).toHaveBeenCalledWith('/api/ai/locate',expect.objectContaining({method:'POST',credentials:'same-origin'}));
+      expect(result.candidates[0]).toMatchObject({status:'candidate',precision:'unknown',source:'ai',inputHash,providerId:'configured'});expect(result.requiresConfirmation).toBe(true);expect(result.candidates[0]).not.toHaveProperty('confidence');
+    }finally{vi.unstubAllGlobals();}
+  });
+  it('rejects stale hashes, out-of-range coordinates and elevated confirmation status',()=>{
+    expect(()=>parseAILocationResponse({...response(),inputHash:'b'.repeat(64)},request)).toThrow();
+    for(const patch of [{coordinate:[200,30]},{status:'confirmed'},{precision:'exact'}]){const body=response();Object.assign(body.candidates[0],patch);expect(()=>parseAILocationResponse(body,request)).toThrow();}
+    expect(parseAILocationResponse({...response(),candidates:[]},request).candidates).toEqual([]);
   });
 });

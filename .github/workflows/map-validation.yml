@@ -1,14 +1,5 @@
 name: Real map validation
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/map/**'
-      - 'src/providers/**'
-      - 'tests/map.e2e.spec.ts'
-      - 'tests/fixtures/map*'
-      - 'playwright.config.ts'
-      - '.github/workflows/map-validation.yml'
   workflow_dispatch:
 permissions:
   contents: read

@@ -49,6 +49,15 @@ export interface VisitRecord {
   stableIndex: number;
   label?: string;
   createdAt: string;
+  history?: VisitHistoryEntry[];
+}
+export interface VisitSourceRecord {
+  visitId: string; placeId?: string; photoIds: string[]; time: TimeEvidence;
+  stableIndex: number; label?: string; createdAt: string;
+}
+export interface VisitHistoryEntry {
+  id: string; kind: 'merge' | 'split' | 'time'; at: string;
+  sourceVisits: VisitSourceRecord[]; targetVisitIds: string[];
 }
 export interface AssetManifest {
   id: string;
@@ -62,6 +71,7 @@ export interface AssetManifest {
   sourceAssetId?: string;
   license?: string;
   attributionId?: string;
+  derivation?: { kind: 'ai-stylize'; providerId: string; model: string; inputHash: string; prompt: string; generatedAt: string; consentPurpose: 'stylize' };
 }
 export interface AttributionRecord { id: string; label: string; url?: string; license?: string; required: boolean; source?: string }
 export interface TravelLibrary { photos: PhotoRecord[]; places: PlaceRecord[]; visits: VisitRecord[] }
@@ -185,6 +195,7 @@ export interface ArtworkDocument {
   visibility: ElementVisibility;
   seed: number;
   previewAssetId?: string;
+  derivedAssetIds?: string[];
   mapSnapshotAssetId?: string;
   mapSnapshot?: MapSnapshotState;
   mapSource?: Record<string, unknown>;

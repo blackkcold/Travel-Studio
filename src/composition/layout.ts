@@ -66,7 +66,7 @@ export function solveLayout(art: ArtworkDocument): LayoutProposal {
   const orderedVisits = art.journey.order.orderedVisitIds.map(id => art.journey.resolvedVisits.find(v => v.id === id)).filter(Boolean);
   const legendText = orderedVisits.map((visit, i) => `${i + 1}. ${visit!.name}`).join('  ·  ');
   const legendH = enabled('legend', v.legend) && legendText ? textLines(legendText, availableWidth, 12) * 15.36 + 8 : 0;
-  const top = pad + titleH + dateH, bottom = pad + 30 + messageH + coordinatesH + legendH;
+  const top = pad + titleH + dateH, bottom = pad + 52 + messageH + coordinatesH + legendH;
   const body = tr(pad, top, availableWidth, H - top - bottom);
   const capacity = Math.max(0, Math.min(1000, Math.floor(art.layout.photoCapacity)));
   const photos = art.frozenPhotoBindings.slice(0, capacity);
@@ -150,7 +150,7 @@ export function solveLayout(art: ArtworkDocument): LayoutProposal {
     make('decoration', 'stamp', 'stamp', tr(W - pad - 60, Math.max(pad, H - pad - 90), 45, 45), 41, { visible: enabled('stamp', v.stamp), layoutParticipation: 'overlay' }),
     make('decoration', 'compass', 'compass', tr(W - pad - 45, H - bottom - 50, 34, 34), 42, { visible: enabled('compass', v.compass), layoutParticipation: 'overlay' }),
     make('decoration', 'string', 'string', tr(W * .5 - 14, 0, 28, 50), 43, { visible: enabled('string', v.string), layoutParticipation: 'overlay' }),
-    make('attribution', 'attribution', 'attribution', tr(pad, H - pad + 5, availableWidth, 22), 50, { fontSize: 9, color: style.palette.ink, locked: true, layoutParticipation: 'reserved' }),
+    make('attribution', 'attribution', 'attribution', tr(pad, H - pad - 17, availableWidth, 44), 50, { fontSize: 9, color: style.palette.ink, locked: true, layoutParticipation: 'reserved' }),
   );
   if (customSlots) {
     const assigned = new Set<string>();

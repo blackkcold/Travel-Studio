@@ -9,7 +9,7 @@ const provider=new PhotonProvider();
 let camera:CameraSpec={...DEFAULT_CAMERA,zoom:14.2,bearing:-15};
 let journey:JourneySnapshot|undefined;
 let exporting=false;
-const controller=createMapController(element('map'),{camera,onError:e=>{if(!exporting)status.textContent=`地图资源错误：${e.code} ${e.details.join('; ')}`;}});
+const controller=createMapController(element('map'),{camera,onError:e=>{element('map-status').textContent=`地图资源错误：${e.code} ${e.details.join('; ')}`;}});
 
 function makeJourney(candidates:PlaceCandidate[]):JourneySnapshot {
   const result=emptyJourney();const a=candidates[0],b=candidates[1] ?? a;

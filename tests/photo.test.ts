@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { inspectImageHeader, timeFromExif } from '../src/photo';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { inspectImageHeader, timeFromExif, processPhoto } from '../src/photo';
+
+afterEach(() => vi.unstubAllGlobals());
 
 function png(width: number, height: number): Uint8Array {
   const bytes = new Uint8Array(33), view = new DataView(bytes.buffer);
@@ -18,6 +20,15 @@ describe('photo file and memory budgets', () => {
   it('rejects HEIC with an actionable conversion message', () => {
     const bytes = new Uint8Array(32); bytes.set(new TextEncoder().encode('ftypheic'), 4);
     expect(() => inspectImageHeader(bytes)).toThrow('转换');
+  });
+  it('releases decoded pixels and the allocated canvas when cancelled immediately after decode', async () => {
+    const controller = new AbortController(), close = vi.fn();
+    const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: () => controller.abort() }) };
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 100, height: 100, close })));
+    vi.stubGlobal('document', { createElement: () => canvas });
+    await expect(processPhoto(new Blob(['fixture']), { mode: 'original' }, 'modern', 100, controller.signal)).rejects.toThrow();
+    expect(close).toHaveBeenCalledOnce();
+    expect(canvas.width).toBe(0); expect(canvas.height).toBe(0);
   });
 });
 describe('truthful EXIF time evidence', () => {

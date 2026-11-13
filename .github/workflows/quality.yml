@@ -2,17 +2,20 @@ name: Quality and application acceptance
 on:
   push:
     branches: [main]
+    paths-ignore: ['release.json']
   pull_request:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
-  group: quality-${{ github.ref }}
+  group: quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  quality:
+  core:
+    name: Types, contracts, build and live services
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,24 +23,46 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run licenses -- --check
       - run: npm run check
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:providers
-      - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: acceptance-evidence
-          path: |
-            verification-results/
-            test-results/
-            playwright-report/
-          retention-days: 14
+          name: live-service-evidence
+          path: verification-results/
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: travel-studio-web
           path: dist/
-          retention-days: 14
+          retention-days: 30
+  browser:
+    name: Browser acceptance (${{ matrix.suite }})
+    needs: core
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [app, map, photo, visual, visits]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test tests/${{ matrix.suite }}.e2e.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-evidence-${{ matrix.suite }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 30
